@@ -11,6 +11,24 @@ CREATE TABLE brands (
     UNIQUE KEY (id)
 );
 
+-- Usuarios del dashboard. Los administradores pueden consultar todas las marcas;
+-- cada cuenta de empresa queda ligada a una sola marca de Metricool.
+CREATE TABLE dashboard_users (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    brand_id INT NULL,
+    email VARCHAR(190) NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    role VARCHAR(20) NOT NULL DEFAULT 'company',
+    display_name VARCHAR(255) NOT NULL,
+    is_active TINYINT(1) NOT NULL DEFAULT 1,
+    last_login_at DATETIME NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY unique_dashboard_user_email (email),
+    INDEX idx_dashboard_user_brand (brand_id),
+    FOREIGN KEY (brand_id) REFERENCES brands(id) ON DELETE CASCADE
+);
+
 -- Tabla de posts de Instagram
 CREATE TABLE instagram_posts (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
@@ -26,7 +44,7 @@ CREATE TABLE instagram_posts (
     engagement_rate DECIMAL(5,2) DEFAULT 0,
     post_type VARCHAR(50),
     post_url VARCHAR(500),
-    media_url VARCHAR(500),
+    media_url TEXT,
     published_date DATETIME,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -51,6 +69,31 @@ CREATE TABLE facebook_posts (
     engagement_rate DECIMAL(5,2) DEFAULT 0,
     post_type VARCHAR(50),
     post_url VARCHAR(500),
+    website_clicks INT DEFAULT 0,
+    ad_spend DECIMAL(12,2) DEFAULT 0,
+    published_date DATETIME,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY unique_post (post_id, brand_id),
+    FOREIGN KEY (brand_id) REFERENCES brands(id) ON DELETE CASCADE,
+    INDEX idx_brand_date (brand_id, published_date)
+);
+
+-- Tabla de videos de TikTok
+CREATE TABLE tiktok_posts (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    post_id VARCHAR(100) NOT NULL,
+    brand_id INT NOT NULL,
+    description TEXT,
+    likes INT DEFAULT 0,
+    comments INT DEFAULT 0,
+    shares INT DEFAULT 0,
+    views INT DEFAULT 0,
+    engagement_rate DECIMAL(5,2) DEFAULT 0,
+    post_type VARCHAR(50),
+    post_url VARCHAR(500),
+    media_url TEXT,
+    duration_seconds INT DEFAULT 0,
     published_date DATETIME,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -117,6 +160,7 @@ CREATE TABLE daily_analytics (
     engagement_rate DECIMAL(5,2) DEFAULT 0,
     profile_views INT DEFAULT 0,
     website_clicks INT DEFAULT 0,
+    ad_spend DECIMAL(12,2) DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY unique_analytics (brand_id, network, date),
@@ -136,6 +180,7 @@ CREATE TABLE scheduled_posts (
     status VARCHAR(50) DEFAULT 'pending',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY unique_scheduled (post_id, brand_id),
     FOREIGN KEY (brand_id) REFERENCES brands(id) ON DELETE CASCADE,
     INDEX idx_brand_scheduled (brand_id, scheduled_date),
     INDEX idx_status (status)
@@ -184,7 +229,8 @@ SELECT
     (SELECT SUM(likes) FROM instagram_posts WHERE brand_id = b.id) as total_instagram_likes,
     (SELECT COUNT(*) FROM facebook_posts WHERE brand_id = b.id) as total_facebook_posts,
     (SELECT SUM(likes) FROM facebook_posts WHERE brand_id = b.id) as total_facebook_likes,
-    (SELECT COUNT(*) FROM x_posts WHERE brand_id = b.id) as total_x_posts,
+    (SELECT COUNT(*) FROM tiktok_posts WHERE brand_id = b.id) as total_tiktok_posts,
+    (SELECT SUM(likes) FROM tiktok_posts WHERE brand_id = b.id) as total_tiktok_likes,
     (SELECT COUNT(*) FROM scheduled_posts WHERE brand_id = b.id AND status = 'pending') as pending_scheduled
 FROM brands b;
 
@@ -205,6 +251,7 @@ CREATE PROCEDURE cleanup_old_data(IN days_to_keep INT)
 BEGIN
     DELETE FROM instagram_posts WHERE published_date < DATE_SUB(NOW(), INTERVAL days_to_keep DAY);
     DELETE FROM facebook_posts WHERE published_date < DATE_SUB(NOW(), INTERVAL days_to_keep DAY);
+    DELETE FROM tiktok_posts WHERE published_date < DATE_SUB(NOW(), INTERVAL days_to_keep DAY);
     DELETE FROM x_posts WHERE published_date < DATE_SUB(NOW(), INTERVAL days_to_keep DAY);
     DELETE FROM linkedin_posts WHERE published_date < DATE_SUB(NOW(), INTERVAL days_to_keep DAY);
     DELETE FROM daily_analytics WHERE date < DATE_SUB(CURDATE(), INTERVAL days_to_keep DAY);
