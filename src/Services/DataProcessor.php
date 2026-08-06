@@ -313,11 +313,12 @@ class DataProcessor
         $byDate = [];
 
         foreach ($seriesByMetric as $metric => $timeline) {
-            if (!is_array($timeline) || !self::isTimelineSeries($timeline)) {
+            $pairs = self::extractTimelinePairs($timeline);
+            if ($pairs === []) {
                 continue;
             }
 
-            foreach ($timeline as $pair) {
+            foreach ($pairs as $pair) {
                 if (!is_array($pair) || count($pair) < 2) {
                     continue;
                 }
@@ -338,6 +339,56 @@ class DataProcessor
         ksort($byDate);
 
         return array_values($byDate);
+    }
+
+    /**
+     * Acepta tanto el timeline legado [[fecha, valor]] como Analytics v2:
+     * {data: [{metric, values: [{dateTime, value}]}]}.
+     *
+     * @return list<array{0: mixed, 1: mixed}>
+     */
+    private static function extractTimelinePairs(mixed $timeline): array
+    {
+        if (!is_array($timeline)) {
+            return [];
+        }
+
+        if (self::isTimelineSeries($timeline)) {
+            return array_values($timeline);
+        }
+
+        $seriesList = $timeline['data'] ?? $timeline;
+        if (!is_array($seriesList)) {
+            return [];
+        }
+
+        $pairs = [];
+        foreach ($seriesList as $series) {
+            if (!is_array($series)) {
+                continue;
+            }
+
+            $values = $series['values'] ?? null;
+            if (!is_array($values)) {
+                continue;
+            }
+
+            foreach ($values as $point) {
+                if (!is_array($point)) {
+                    continue;
+                }
+
+                $date = $point['dateTime'] ?? $point['date'] ?? null;
+                $value = $point['value'] ?? null;
+                if ($date === null || $value === null) {
+                    continue;
+                }
+
+                $pairs[] = [$date, $value];
+            }
+        }
+
+        return $pairs;
     }
 
     public static function normalizeAnalytics(mixed $analytics, int $brandId, string $network): array

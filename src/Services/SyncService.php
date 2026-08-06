@@ -407,9 +407,11 @@ class SyncService
 
     private function syncNetworkAnalytics(string $network, int $brandId, string $startDate, string $endDate): int
     {
-        $metrics = MetricoolAPI::isAdsAnalyticsNetwork($network)
-            ? MetricoolAPI::ADS_ANALYTICS_METRICS
-            : MetricoolAPI::ORGANIC_ANALYTICS_METRICS;
+        if (MetricoolAPI::isAdsAnalyticsNetwork($network)) {
+            return $this->syncAdsAnalytics($network, $brandId, $startDate, $endDate);
+        }
+
+        $metrics = MetricoolAPI::ORGANIC_ANALYTICS_METRICS;
 
         $seriesByMetric = [];
         foreach ($metrics as $metric) {
@@ -422,8 +424,22 @@ class SyncService
 
         $rows = DataProcessor::mergeTimelineMetrics($seriesByMetric, $brandId, $network);
         if ($rows === []) {
-            $response = $this->api->getAnalytics($network, $startDate, $endDate);
-            $rows = DataProcessor::normalizeAnalytics($response, $brandId, $network);
+            try {
+                $aggregation = $this->api->getAnalyticsAggregation(
+                    $network,
+                    $startDate,
+                    $endDate,
+                    'followers'
+                );
+                $followers = (int) ($aggregation['data'] ?? 0);
+                if ($followers > 0) {
+                    $rows[] = $this->emptyAnalyticsRow($brandId, $network, $endDate, [
+                        'followers' => $followers,
+                    ]);
+                }
+            } catch (Exception $e) {
+                $this->logger->warn("    agregación {$network}/followers: " . $e->getMessage());
+            }
         }
 
         $stmt = $this->pdo->prepare(
@@ -437,18 +453,10 @@ class SyncService
                 :profile_views, :website_clicks, :ad_spend
             )
             ON DUPLICATE KEY UPDATE
-                followers = VALUES(followers),
-                following = VALUES(following),
-                posts_count = VALUES(posts_count),
-                likes = VALUES(likes),
-                comments = VALUES(comments),
-                shares = VALUES(shares),
-                reach = VALUES(reach),
-                impressions = VALUES(impressions),
-                engagement_rate = VALUES(engagement_rate),
-                profile_views = VALUES(profile_views),
-                website_clicks = VALUES(website_clicks),
-                ad_spend = VALUES(ad_spend)'
+                followers = CASE
+                    WHEN VALUES(followers) > 0 THEN VALUES(followers)
+                    ELSE followers
+                END'
         );
 
         $saved = 0;
@@ -464,6 +472,84 @@ class SyncService
         }
 
         return $saved;
+    }
+
+    private function syncAdsAnalytics(
+        string $network,
+        int $brandId,
+        string $startDate,
+        string $endDate
+    ): int {
+        $response = $this->api->getAdsCampaigns($network, $startDate, $endDate);
+        $campaigns = DataProcessor::unwrapList($response);
+
+        $impressions = 0;
+        $clicks = 0;
+        $reach = 0;
+        foreach ($campaigns as $campaign) {
+            if (!is_array($campaign)) {
+                continue;
+            }
+
+            $impressions += (int) ($campaign['impressions'] ?? 0);
+            $clicks += (int) ($campaign['clicks'] ?? 0);
+            $reach += (int) ($campaign['reach'] ?? $campaign['impressionsReach'] ?? 0);
+        }
+
+        if ($impressions === 0 && $clicks === 0 && $reach === 0) {
+            return 0;
+        }
+
+        $row = $this->emptyAnalyticsRow($brandId, $network, $endDate, [
+            'impressions' => $impressions,
+            'website_clicks' => $clicks,
+            'reach' => $reach,
+        ]);
+
+        $stmt = $this->pdo->prepare(
+            'INSERT INTO daily_analytics (
+                brand_id, network, date, followers, following, posts_count,
+                likes, comments, shares, reach, impressions, engagement_rate,
+                profile_views, website_clicks, ad_spend
+            ) VALUES (
+                :brand_id, :network, :date, :followers, :following, :posts_count,
+                :likes, :comments, :shares, :reach, :impressions, :engagement_rate,
+                :profile_views, :website_clicks, :ad_spend
+            )
+            ON DUPLICATE KEY UPDATE
+                reach = VALUES(reach),
+                impressions = VALUES(impressions),
+                website_clicks = VALUES(website_clicks),
+                ad_spend = 0'
+        );
+        $stmt->execute($row);
+
+        return 1;
+    }
+
+    /**
+     * @param array<string, int|float> $values
+     * @return array<string, int|float|string>
+     */
+    private function emptyAnalyticsRow(int $brandId, string $network, string $date, array $values = []): array
+    {
+        return array_replace([
+            'brand_id' => $brandId,
+            'network' => $network,
+            'date' => $date,
+            'followers' => 0,
+            'following' => 0,
+            'posts_count' => 0,
+            'likes' => 0,
+            'comments' => 0,
+            'shares' => 0,
+            'reach' => 0,
+            'impressions' => 0,
+            'engagement_rate' => 0.0,
+            'profile_views' => 0,
+            'website_clicks' => 0,
+            'ad_spend' => 0.0,
+        ], $values);
     }
 
     private function rebuildDailyAnalyticsFromPosts(int $brandId, string $startDate, string $endDate): int

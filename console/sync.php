@@ -16,8 +16,9 @@ function printUsage(): void
     echo "  --start   Fecha inicial (ej. 2026-05-01)" . PHP_EOL;
     echo "  --end     Fecha final   (ej. 2026-05-31)" . PHP_EOL;
     echo PHP_EOL;
-    echo "Sin fechas usa SYNC_DAYS del .env (default: últimos 365 días)." . PHP_EOL;
-    echo "También puedes definir SYNC_START_DATE y SYNC_END_DATE en .env." . PHP_EOL;
+    echo "Sin fechas ejecuta el modo cron incremental: ayer y hoy." . PHP_EOL;
+    echo "El cálculo usa METRICOOL_TIMEZONE (default: America/Costa_Rica)." . PHP_EOL;
+    echo "Para recuperar períodos anteriores debes indicar --start y --end." . PHP_EOL;
 }
 
 try {
@@ -33,17 +34,28 @@ try {
     $logger = new Logger();
     $sync = new SyncService($pdo, $api, $logger);
 
-    $start = $options['start'] ?? Config::get('SYNC_START_DATE');
-    $end = $options['end'] ?? Config::get('SYNC_END_DATE');
+    $start = $options['start'] ?? null;
+    $end = $options['end'] ?? null;
 
     if (($start && !$end) || (!$start && $end)) {
         fwrite(STDERR, "Error: debes indicar --start y --end juntos." . PHP_EOL);
         exit(1);
     }
 
-    if ($start && $end) {
-        $sync->setDateRange($start, $end);
+    if (!$start && !$end) {
+        $timezoneName = Config::get('METRICOOL_TIMEZONE', 'America/Costa_Rica') ?? 'America/Costa_Rica';
+        try {
+            $timezone = new DateTimeZone($timezoneName);
+        } catch (Throwable) {
+            $timezone = new DateTimeZone('America/Costa_Rica');
+        }
+
+        $today = new DateTimeImmutable('today', $timezone);
+        $start = $today->modify('-1 day')->format('Y-m-d');
+        $end = $today->format('Y-m-d');
     }
+
+    $sync->setDateRange($start, $end);
 
     $sync->syncAll();
     exit(0);

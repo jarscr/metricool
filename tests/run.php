@@ -152,8 +152,20 @@ function createDataServiceFixture(): DataService
         VALUES ('fb-1', 1, 'Hola FB', 8, 1, 2, 8, 80, 120, 10.2, 'post', 'https://fb.example/post', 4, 0, '2026-08-02 12:00:00')");
     $pdo->exec("INSERT INTO tiktok_posts (post_id, brand_id, description, likes, comments, shares, views, engagement_rate, post_type, post_url, media_url, duration_seconds, published_date)
         VALUES ('tt-1', 1, 'Hola TikTok', 12, 3, 2, 600, 2.83, 'VIDEO', 'https://tiktok.example/video', 'https://tiktok.example/cover', 18, '2026-08-03 12:00:00')");
-    $pdo->exec("INSERT INTO daily_analytics (brand_id, network, date, followers, impressions, website_clicks)
-        VALUES (1, 'tiktok', '2026-08-02', 500, 1000, 20)");
+    $pdo->exec("INSERT INTO daily_analytics (brand_id, network, date, followers, reach, impressions, website_clicks)
+        VALUES
+        (1, 'instagram', '2026-08-01', 1200, 100, 150, 0),
+        (1, 'instagram', '2026-08-04', 1100, 90, 140, 0),
+        (1, 'facebook', '2026-08-02', 2400, 80, 120, 4),
+        (1, 'tiktok', '2026-08-02', 500, 0, 1000, 20),
+        (1, 'facebookads', '2026-08-03', 0, 8000, 12000, 350),
+        (1, 'googleads', '2026-08-03', 0, 4500, 9000, 210)");
+
+    $pdo->exec("INSERT INTO brands (id, name) VALUES (2, 'Solo Facebook')");
+    $pdo->exec("INSERT INTO facebook_posts (post_id, brand_id, message, likes, comments, shares, reactions, reach, impressions, engagement_rate, post_type, post_url, website_clicks, ad_spend, published_date)
+        VALUES ('fb-only', 2, 'Solo Facebook', 3, 1, 0, 3, 30, 45, 8.0, 'post', 'https://fb.example/only', 0, 0, '2026-08-02 09:00:00')");
+    $pdo->exec("INSERT INTO daily_analytics (brand_id, network, date, followers, impressions)
+        VALUES (2, 'facebook', '2026-08-02', 700, 45)");
     $pdo->exec("INSERT INTO scheduled_posts (post_id, brand_id, network, content, media_url, scheduled_date, status)
         VALUES ('sched-1', 1, 'instagram', 'Pendiente', 'https://cdn.example/media', '2026-08-03 10:00:00', 'pending')");
     $pdo->exec("INSERT INTO sync_history (brand_id, sync_type, start_date, end_date, records_processed, status, created_at)
@@ -181,20 +193,38 @@ function testStatsDateParams(): void
         Exception::class,
         'statsDateParams debe rechazar rangos invertidos'
     );
+
+    assertSameStrict(
+        ['metric' => 'followers', 'subject' => 'account'],
+        MetricoolAPI::resolveAnalyticsMetricSpec('instagram', 'followers'),
+        'Instagram debe consultar seguidores de cuenta en Analytics v2'
+    );
+    assertSameStrict(
+        ['metric' => 'pageFollows', 'subject' => 'account'],
+        MetricoolAPI::resolveAnalyticsMetricSpec('facebook', 'followers'),
+        'Facebook debe consultar pageFollows'
+    );
+    assertSameStrict(
+        ['metric' => 'followers_count', 'subject' => 'account'],
+        MetricoolAPI::resolveAnalyticsMetricSpec('tiktok', 'followers'),
+        'TikTok debe consultar followers_count'
+    );
 }
 
 function testSupportedAnalyticsNetworks(): void
 {
     $brand = [
+        'instagram' => ['id' => 111],
         'tiktok' => ['id' => 123],
         'facebookAds' => ['id' => 456],
+        'adwords' => ['id' => 654],
         'linkedinCompany' => ['id' => 789],
     ];
 
     assertSameStrict(
-        [],
+        ['instagram', 'tiktok', 'facebookads', 'googleads'],
         MetricoolAPI::resolveSupportedSyncAnalyticsNetworks($brand),
-        'El timeline legado no debe usarse para las tres redes de posts soportadas'
+        'Solo deben sincronizarse perfiles y cuentas publicitarias soportadas que estén conectadas'
     );
 }
 
@@ -262,6 +292,21 @@ function testDataProcessorNormalization(): void
     assertSameStrict(100, $tiktok['views'], 'TikTok debe conservar viewCount');
     assertSameStrict(15.0, $tiktok['engagement_rate'], 'TikTok debe calcular interacción sobre vistas');
 
+    $timeline = DataProcessor::mergeTimelineMetrics([
+        'followers' => [
+            'data' => [[
+                'metric' => 'followers_count',
+                'values' => [
+                    ['dateTime' => '2026-08-04T00:00:00-06:00', 'value' => 490],
+                    ['dateTime' => '2026-08-05T00:00:00-06:00', 'value' => 500],
+                ],
+            ]],
+        ],
+    ], 10, 'tiktok');
+
+    assertSameStrict(2, count($timeline), 'Debe reconocer la respuesta envuelta de Analytics v2');
+    assertSameStrict(500, $timeline[1]['followers'], 'Debe guardar el valor de seguidores de Analytics v2');
+
     $scheduled = DataProcessor::normalizeScheduledPost([
         'id' => 'sched-1',
         'provider' => str_repeat('n', 70),
@@ -296,17 +341,28 @@ function testDataServiceSupportedNetworks(): void
     $analytics = $service->getDailyAnalytics(1, 'tiktok', '2026-08-01', '2026-08-05');
     assertSameStrict(1, count($analytics), 'TikTok debe seguir disponible en analytics diarios reconstruidos desde videos');
 
-    expectException(
-        static fn () => $service->getDailyAnalytics(1, 'facebookads', '2026-08-01', '2026-08-05'),
-        InvalidArgumentException::class,
-        'Facebook Ads no debe seguir expuesto como analytics soportado'
-    );
+    $adsAnalytics = $service->getDailyAnalytics(1, 'facebookads', '2026-08-01', '2026-08-05');
+    assertSameStrict(1, count($adsAnalytics), 'Meta Ads debe exponerse cuando la marca tiene datos sincronizados');
 
     $overview = $service->getOverview(1, '2026-08-01', '2026-08-05');
     assertSameStrict(
-        ['instagram', 'facebook', 'tiktok'],
+        ['instagram', 'facebook', 'tiktok', 'facebookads', 'googleads'],
         array_keys($overview['networks']),
-        'El overview debe limitarse a Instagram, Facebook y TikTok'
+        'El overview debe incluir redes orgánicas y Ads que tengan datos'
+    );
+    assertSameStrict(1100, $overview['networks']['instagram']['followers_latest'], 'Instagram debe exponer el total más reciente, no el máximo histórico');
+    assertSameStrict(2400, $overview['networks']['facebook']['followers_latest'], 'Facebook debe exponer su último total de seguidores');
+    assertSameStrict(500, $overview['networks']['tiktok']['followers_latest'], 'TikTok debe exponer su último total de seguidores');
+    assertSameStrict('ads', $overview['networks']['facebookads']['type'], 'Meta Ads debe identificarse como publicidad');
+    assertSameStrict(12000, $overview['networks']['facebookads']['impressions_total'], 'Meta Ads debe sumar impresiones');
+    assertTrueStrict(!array_key_exists('ad_spend_total', $overview['networks']['facebookads']), 'El gasto de Meta Ads no debe exponerse al dashboard');
+    assertTrueStrict(!array_key_exists('ad_spend_total', $overview['networks']['googleads']), 'El gasto de Google Ads no debe exponerse al dashboard');
+
+    $facebookOnly = $service->getOverview(2, '2026-08-01', '2026-08-05');
+    assertSameStrict(
+        ['facebook'],
+        array_keys($facebookOnly['networks']),
+        'Una marca con solo Facebook no debe mostrar redes ni cuentas Ads ausentes'
     );
 }
 

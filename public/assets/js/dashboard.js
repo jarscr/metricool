@@ -1,16 +1,23 @@
 let analyticsChart = null;
-let networkChart = null;
+let followersChart = null;
 
 const networkLabels = {
     instagram: 'Instagram',
     facebook: 'Facebook',
     tiktok: 'TikTok',
+    facebookads: 'Meta Ads',
+    googleads: 'Google Ads',
 };
+
+const organicNetworks = ['instagram', 'facebook', 'tiktok'];
+const adsNetworks = ['facebookads', 'googleads'];
 
 const networkColors = {
     instagram: '#f0447a',
     facebook: '#2e86ff',
     tiktok: '#24ddd5',
+    facebookads: '#5b8def',
+    googleads: '#f9ab00',
 };
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -50,7 +57,10 @@ async function loadBrands() {
             select.disabled = true;
         }
 
-        select.addEventListener('change', loadDashboard);
+        select.addEventListener('change', () => {
+            document.getElementById('networkSelect').value = '';
+            loadDashboard();
+        });
         await loadDashboard();
     } catch (error) {
         showError(error.message);
@@ -63,16 +73,14 @@ async function loadDashboard() {
     const brandId = document.getElementById('brandSelect').value;
     const startDate = document.getElementById('startDate').value;
     const endDate = document.getElementById('endDate').value;
-    const network = document.getElementById('networkSelect').value;
     const params = { brand_id: brandId, start_date: startDate, end_date: endDate };
 
     try {
-        const postsRequest = ApiClient.get('posts', { ...params, network: network || undefined, per_page: 10 });
-
-        const [overview, analytics, posts, scheduled, syncStatus] = await Promise.all([
-            ApiClient.get('dashboard/overview', params),
+        const overview = await ApiClient.get('dashboard/overview', params);
+        const network = updateNetworkFilter(overview.data.networks);
+        const [analytics, posts, scheduled, syncStatus] = await Promise.all([
             ApiClient.get('analytics/daily', params),
-            postsRequest,
+            ApiClient.get('posts', { ...params, network: network || undefined, per_page: 10 }),
             ApiClient.get('scheduled', { brand_id: brandId }),
             ApiClient.get('sync/status', { brand_id: brandId }),
         ]);
@@ -80,12 +88,28 @@ async function loadDashboard() {
         renderSyncBanner(overview.data, syncStatus.data);
         renderStats(overview.data, analytics.data);
         renderAnalyticsChart(analytics.data, network);
-        renderNetworkChart(overview.data.networks);
+        renderFollowersChart(analytics.data, network);
         renderPosts(posts.data, network);
         renderScheduled(scheduled.data);
     } catch (error) {
         showError(error.message);
     }
+}
+
+function updateNetworkFilter(networks) {
+    const select = document.getElementById('networkSelect');
+    const previousValue = select.value;
+    const availableNetworks = organicNetworks.filter((network) => networks[network]?.type === 'posts');
+
+    select.innerHTML = [
+        '<option value="">Todas</option>',
+        ...availableNetworks.map((network) => `<option value="${network}">${networkLabels[network]}</option>`),
+    ].join('');
+
+    select.value = availableNetworks.includes(previousValue) ? previousValue : '';
+    select.disabled = availableNetworks.length <= 1;
+
+    return select.value;
 }
 
 function renderSyncBanner(overview, syncStatus) {
@@ -101,7 +125,12 @@ function renderSyncBanner(overview, syncStatus) {
 function renderStats(overview, analyticsRows = []) {
     const grid = document.getElementById('statsGrid');
     const impressionsGrid = document.getElementById('impressionsGrid');
-    const impressionTotals = Object.fromEntries(Object.keys(networkLabels).map((network) => [network, 0]));
+    const followersGrid = document.getElementById('followersGrid');
+    const adsGrid = document.getElementById('adsGrid');
+    const activeOrganicNetworks = organicNetworks.filter(
+        (network) => overview.networks[network]?.type === 'posts'
+    );
+    const impressionTotals = Object.fromEntries(activeOrganicNetworks.map((network) => [network, 0]));
 
     analyticsRows.forEach((row) => {
         if (Object.hasOwn(impressionTotals, row.network)) {
@@ -114,49 +143,10 @@ function renderStats(overview, analyticsRows = []) {
         { label: 'Programados', value: overview.totals.scheduled_pending, className: 'stat-card--scheduled' },
     ];
 
-    Object.entries(overview.networks).forEach(([network, stats]) => {
-        if (stats.type === 'ads') {
-            cards.push({
-                label: `${networkLabels[network] || network} · impresiones`,
-                value: stats.impressions_total,
-                className: `stat-card--${network}`,
-            });
-            if (stats.ad_spend_total > 0) {
-                cards.push({
-                    label: `${networkLabels[network] || network} · inversión`,
-                    value: stats.ad_spend_total,
-                    className: `stat-card--${network}`,
-                    isCurrency: true,
-                });
-            }
-            if (stats.clicks_total > 0) {
-                cards.push({
-                    label: `${networkLabels[network] || network} · clics`,
-                    value: stats.clicks_total,
-                    className: `stat-card--${network}`,
-                });
-            }
-            return;
-        }
-
-        if (stats.type === 'analytics') {
-            cards.push({
-                label: `${networkLabels[network] || network} · impresiones`,
-                value: stats.impressions_total,
-                className: `stat-card--${network}`,
-            });
-            if (stats.followers_latest > 0) {
-                cards.push({
-                    label: `${networkLabels[network] || network} · seguidores`,
-                    value: stats.followers_latest,
-                    className: `stat-card--${network}`,
-                });
-            }
-            return;
-        }
-
+    activeOrganicNetworks.forEach((network) => {
+        const stats = overview.networks[network];
         cards.push({
-            label: `${networkLabels[network] || network} posts`,
+            label: `${networkLabels[network]} posts`,
             value: stats.posts_count,
             className: `stat-card--${network}`,
         });
@@ -165,171 +155,257 @@ function renderStats(overview, analyticsRows = []) {
     grid.innerHTML = cards.map((card) => `
         <article class="stat-card ${card.className}">
             <div class="stat-card__label">${card.label}</div>
-            <div class="stat-card__value">${card.isCurrency ? formatCurrency(card.value) : formatNumber(card.value)}</div>
+            <div class="stat-card__value">${formatNumber(card.value)}</div>
             <div class="stat-card__rule" aria-hidden="true"></div>
         </article>
     `).join('');
 
-    impressionsGrid.innerHTML = Object.keys(networkLabels).map((network) => `
-        <article class="stat-card stat-card--${network}">
-            <div class="stat-card__label"><span class="network-dot network-dot--${network}"></span>${networkLabels[network]}</div>
-            <div class="stat-card__value">${formatNumber(impressionTotals[network])}</div>
-            <div class="stat-card__caption">impresiones acumuladas</div>
-        </article>
-    `).join('');
+    renderTrendSummary({
+        grid: impressionsGrid,
+        totalElement: document.getElementById('impressionsTotal'),
+        compositionElement: document.getElementById('impressionsComposition'),
+        networks: activeOrganicNetworks,
+        values: impressionTotals,
+        rows: analyticsRows,
+        metric: 'impressions',
+    });
+    toggleSection('reachSection', activeOrganicNetworks.length > 0);
+
+    const followerNetworks = activeOrganicNetworks.filter(
+        (network) => Number(overview.networks[network].followers_latest || 0) > 0
+    );
+    const followerTotals = Object.fromEntries(followerNetworks.map(
+        (network) => [network, Number(overview.networks[network].followers_latest || 0)]
+    ));
+    renderTrendSummary({
+        grid: followersGrid,
+        totalElement: document.getElementById('followersTotal'),
+        compositionElement: document.getElementById('followersComposition'),
+        networks: followerNetworks,
+        values: followerTotals,
+        rows: analyticsRows,
+        metric: 'followers',
+        ignoreZero: true,
+    });
+    toggleSection('followersSection', followerNetworks.length > 0);
+
+    const availableAdsNetworks = adsNetworks.filter((network) => overview.networks[network]?.type === 'ads');
+    adsGrid.innerHTML = availableAdsNetworks.map((network) => {
+        const stats = overview.networks[network];
+        return `
+            <article class="ads-card ads-card--${network}">
+                <div class="ads-card__header">
+                    <span class="network-dot network-dot--${network}"></span>
+                    <strong>${networkLabels[network]}</strong>
+                    <span>Datos del período</span>
+                </div>
+                <dl class="ads-card__metrics">
+                    <div><dt>Impresiones</dt><dd>${formatNumber(stats.impressions_total)}</dd></div>
+                    <div><dt>Clics</dt><dd>${formatNumber(stats.clicks_total)}</dd></div>
+                    <div><dt>Alcance</dt><dd>${formatNumber(stats.reach_total)}</dd></div>
+                </dl>
+            </article>
+        `;
+    }).join('');
+    toggleSection('adsSection', availableAdsNetworks.length > 0);
+}
+
+function renderTrendSummary({
+    grid,
+    totalElement,
+    compositionElement,
+    networks,
+    values,
+    rows,
+    metric,
+    ignoreZero = false,
+}) {
+    const total = networks.reduce((sum, network) => sum + Number(values[network] || 0), 0);
+    totalElement.textContent = formatCompactNumber(total);
+
+    compositionElement.innerHTML = networks.map((network) => {
+        const share = total > 0 ? (Number(values[network] || 0) / total) * 100 : 0;
+        return `<span class="composition-bar__segment composition-bar__segment--${network}" style="width: ${share.toFixed(2)}%"></span>`;
+    }).join('');
+
+    grid.innerHTML = networks.map((network) => {
+        const trend = getMetricTrend(rows, network, metric, ignoreZero);
+        return `
+            <article class="trend-network-card trend-network-card--${network}">
+                <strong>${formatCompactNumber(values[network])}<span class="trend-marker" title="${trend.label}">${trend.symbol}</span></strong>
+                <span><i class="network-dot network-dot--${network}" aria-hidden="true"></i>${networkLabels[network]}</span>
+            </article>
+        `;
+    }).join('');
+}
+
+function getMetricTrend(rows, network, metric, ignoreZero = false) {
+    const values = rows
+        .filter((row) => row.network === network)
+        .sort((a, b) => String(a.date).localeCompare(String(b.date)))
+        .map((row) => Number(row[metric] || 0))
+        .filter((value) => !ignoreZero || value > 0);
+
+    if (values.length < 2) {
+        return { symbol: '—', label: 'Sin historial suficiente' };
+    }
+
+    const change = values.at(-1) - values[0];
+    if (change > 0) return { symbol: '↑', label: 'Tendencia ascendente' };
+    if (change < 0) return { symbol: '↓', label: 'Tendencia descendente' };
+    return { symbol: '→', label: 'Sin variación' };
+}
+
+function toggleSection(id, visible) {
+    document.getElementById(id).classList.toggle('hidden', !visible);
 }
 
 function renderAnalyticsChart(rows, networkFilter) {
-    const isComparison = !networkFilter;
-    const labels = [...new Set(rows.map((row) => row.date))].sort();
-    const visibleNetworks = networkFilter
-        ? [networkFilter]
-        : Object.keys(networkLabels).filter((network) => rows.some((row) => row.network === network));
-    const useDualAxes = isComparison
-        && visibleNetworks.includes('instagram')
-        && visibleNetworks.some((network) => network !== 'instagram');
+    if (analyticsChart) {
+        analyticsChart.destroy();
+    }
+    analyticsChart = renderTrendChart({
+        canvasId: 'analyticsChart',
+        rows,
+        metric: 'impressions',
+        networkFilter,
+        hintId: 'analyticsScaleHint',
+        ignoreZero: false,
+    });
+}
 
-    const datasets = visibleNetworks.map((network) => {
+function renderFollowersChart(rows, networkFilter) {
+    if (followersChart) {
+        followersChart.destroy();
+    }
+    followersChart = renderTrendChart({
+        canvasId: 'followersChart',
+        rows,
+        metric: 'followers',
+        networkFilter,
+        hintId: 'followersScaleHint',
+        ignoreZero: true,
+    });
+}
+
+function renderTrendChart({ canvasId, rows, metric, networkFilter, hintId, ignoreZero }) {
+    const chartRows = rows.filter((row) => organicNetworks.includes(row.network));
+    const labels = [...new Set(chartRows.map((row) => row.date))].sort();
+    const visibleNetworks = networkFilter
+        ? [networkFilter].filter((network) => chartRows.some((row) => row.network === network && (!ignoreZero || Number(row[metric] || 0) > 0)))
+        : organicNetworks.filter((network) => chartRows.some((row) => row.network === network && (!ignoreZero || Number(row[metric] || 0) > 0)));
+    const axisSplit = getScaleSplit(chartRows, visibleNetworks, metric, ignoreZero);
+    const canvas = document.getElementById(canvasId);
+    const emptyState = document.getElementById(`${canvasId}Empty`);
+    const hasChartData = visibleNetworks.length > 0 && labels.length > 0;
+    canvas.classList.toggle('hidden', !hasChartData);
+    emptyState.classList.toggle('hidden', hasChartData);
+    if (!hasChartData) {
+        document.getElementById(hintId).textContent = '';
+        return null;
+    }
+
+    const datasets = visibleNetworks.map((network, index) => {
         const valuesByDate = {};
-        rows
+        chartRows
             .filter((row) => row.network === network)
             .forEach((row) => {
-                valuesByDate[row.date] = Number(row.impressions || 0);
+                const value = Number(row[metric] || 0);
+                valuesByDate[row.date] = ignoreZero && value <= 0 ? null : value;
             });
 
-        const color = networkColors[network] || '#d7ff64';
+        const color = networkColors[network] || '#ca3457';
         return {
             label: networkLabels[network] || network,
             data: labels.map((label) => valuesByDate[label] ?? null),
             borderColor: color,
             backgroundColor: color,
+            borderDash: index === 1 ? [7, 4] : (index === 2 ? [2, 4] : []),
             fill: false,
-            tension: 0.3,
+            tension: 0.28,
             spanGaps: true,
             borderWidth: 2,
-            pointRadius: 2,
-            pointHoverRadius: 4,
-            yAxisID: useDualAxes && network === 'instagram' ? 'yInstagram' : 'yVolume',
+            pointRadius: labels.length > 45 ? 0 : 2.5,
+            pointHoverRadius: 5,
+            pointHitRadius: 12,
+            yAxisID: axisSplit === network ? 'ySecondary' : 'yPrimary',
         };
     });
 
-    const scaleHint = document.getElementById('analyticsScaleHint');
-    scaleHint.textContent = useDualAxes
-        ? 'Escalas separadas: Instagram en el eje izquierdo; Facebook y TikTok en el eje derecho.'
+    const hint = document.getElementById(hintId);
+    hint.textContent = axisSplit
+        ? `${networkLabels[axisSplit]} usa una escala independiente para mantener visible su tendencia.`
         : '';
 
-    const yScales = useDualAxes
-        ? {
-            yInstagram: {
-                type: 'linear',
-                position: 'left',
-                beginAtZero: true,
-                title: { display: true, text: 'Instagram', color: networkColors.instagram },
-                ticks: { color: networkColors.instagram },
-                grid: { color: 'rgba(133, 142, 155, 0.12)' },
+    const scales = {
+        x: {
+            ticks: {
+                color: '#c2a1ac',
+                maxRotation: 0,
+                autoSkip: true,
+                maxTicksLimit: 12,
+                callback(value, index) {
+                    return formatChartDate(labels[index]);
+                },
             },
-            yVolume: {
-                type: 'linear',
-                position: 'right',
-                beginAtZero: true,
-                title: { display: true, text: 'Facebook / TikTok', color: '#858e9b' },
-                ticks: { color: '#858e9b' },
-                grid: { drawOnChartArea: false },
-            },
-        }
-        : {
-            yVolume: {
-                type: 'linear',
-                position: 'left',
-                beginAtZero: true,
-                ticks: { color: '#858e9b' },
-                grid: { color: 'rgba(133, 142, 155, 0.12)' },
-            },
-        };
-
-    if (analyticsChart) {
-        analyticsChart.destroy();
+            grid: { display: false },
+            border: { color: '#774153' },
+        },
+        yPrimary: chartScale('left', true),
+    };
+    if (axisSplit) {
+        scales.ySecondary = chartScale('right', false, networkColors[axisSplit]);
     }
 
-    analyticsChart = new Chart(document.getElementById('analyticsChart'), {
+    return new Chart(canvas, {
         type: 'line',
-        data: {
-            labels,
-            datasets,
-        },
+        data: { labels, datasets },
         options: {
             responsive: true,
+            maintainAspectRatio: false,
+            animation: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? false : { duration: 280 },
             interaction: { mode: 'index', intersect: false },
             plugins: {
-                legend: {
-                    labels: {
-                        color: '#c5cad2',
-                        usePointStyle: true,
-                        pointStyle: 'circle',
-                        boxWidth: 7,
-                        boxHeight: 7,
-                        padding: 18,
-                        font: { size: 11 },
-                    },
-                },
+                legend: { display: false },
                 tooltip: {
                     callbacks: {
                         label: (context) => `${context.dataset.label}: ${formatNumber(context.parsed.y)}`,
                     },
                 },
             },
-            scales: {
-                x: {
-                    ticks: { color: '#858e9b', maxRotation: 45 },
-                    grid: { display: false },
-                    border: { color: '#343c47' },
-                },
-                ...yScales,
-            },
+            scales,
         },
     });
 }
 
-function renderNetworkChart(networks) {
-    const postNetworks = Object.entries(networks).filter(([, stats]) => stats.type === 'posts' || !stats.type);
-    const labels = postNetworks.map(([key]) => networkLabels[key] || key);
-    const values = postNetworks.map(([, item]) => item.posts_count);
-    const colors = postNetworks.map(([key]) => networkColors[key] || '#d7ff64');
+function getScaleSplit(rows, networks, metric, ignoreZero) {
+    if (networks.length < 2) return null;
 
-    if (networkChart) {
-        networkChart.destroy();
-    }
+    const maxima = networks.map((network) => {
+        const values = rows
+            .filter((row) => row.network === network)
+            .map((row) => Number(row[metric] || 0))
+            .filter((value) => !ignoreZero || value > 0);
+        return { network, maximum: Math.max(0, ...values) };
+    }).filter((item) => item.maximum > 0).sort((a, b) => a.maximum - b.maximum);
 
-    networkChart = new Chart(document.getElementById('networkChart'), {
-        type: 'doughnut',
-        data: {
-            labels,
-            datasets: [{
-                data: values,
-                backgroundColor: colors,
-                borderWidth: 0,
-                hoverOffset: 5,
-            }],
+    if (maxima.length < 2) return null;
+    return maxima.at(-1).maximum >= maxima[0].maximum * 8 ? maxima[0].network : null;
+}
+
+function chartScale(position, drawGrid, color = '#c2a1ac') {
+    return {
+        type: 'linear',
+        position,
+        beginAtZero: true,
+        ticks: {
+            color,
+            maxTicksLimit: 5,
+            callback: (value) => formatCompactNumber(value),
         },
-        options: {
-            responsive: true,
-            cutout: '66%',
-            plugins: {
-                legend: {
-                    position: 'bottom',
-                    labels: {
-                        color: '#c5cad2',
-                        usePointStyle: true,
-                        pointStyle: 'circle',
-                        boxWidth: 7,
-                        boxHeight: 7,
-                        padding: 18,
-                        font: { size: 11 },
-                    },
-                },
-            },
-        },
-    });
+        grid: drawGrid ? { color: 'rgba(194, 161, 172, 0.13)' } : { drawOnChartArea: false },
+        border: { display: false },
+    };
 }
 
 function renderPosts(posts, network) {
@@ -401,12 +477,17 @@ function formatNumber(value) {
     return new Intl.NumberFormat('es-CR').format(value || 0);
 }
 
-function formatCurrency(value) {
+function formatCompactNumber(value) {
     return new Intl.NumberFormat('es-CR', {
-        style: 'currency',
-        currency: 'USD',
+        notation: 'compact',
         maximumFractionDigits: 2,
-    }).format(value || 0);
+    }).format(Number(value || 0));
+}
+
+function formatChartDate(value) {
+    if (!value) return '';
+    const date = new Date(`${value}T00:00:00`);
+    return date.toLocaleDateString('es-CR', { day: 'numeric', month: 'short' }).replace('.', '');
 }
 
 function truncate(text, max) {

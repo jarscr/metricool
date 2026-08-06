@@ -47,8 +47,38 @@ try {
     $instagram = \Metricool\Services\DataProcessor::unwrapList($api->getInstagramPosts($startDate, $endDate));
     echo 'Posts Instagram (/stats/instagram/posts): ' . count($instagram) . PHP_EOL;
 
-    $analytics = $api->getAnalytics('instagram', $startDate, $endDate);
-    echo 'Analytics timeline (/stats/timeline/instagram): ' . count($analytics) . ' puntos' . PHP_EOL;
+    $connectedAnalytics = MetricoolAPI::resolveSupportedSyncAnalyticsNetworks($brands[0]);
+    foreach (['instagram', 'facebook', 'tiktok'] as $network) {
+        if (!in_array($network, $connectedAnalytics, true)) {
+            echo "Seguidores {$network}: red no conectada" . PHP_EOL;
+            continue;
+        }
+
+        try {
+            $analytics = $api->getAnalytics($network, $startDate, $endDate, 'followers');
+            $rows = \Metricool\Services\DataProcessor::mergeTimelineMetrics(
+                ['followers' => $analytics],
+                $first['id'],
+                $network
+            );
+            $lastRow = $rows === [] ? null : end($rows);
+            $latest = is_array($lastRow) ? (int) ($lastRow['followers'] ?? 0) : 0;
+
+            if ($latest === 0) {
+                $aggregation = $api->getAnalyticsAggregation(
+                    $network,
+                    $startDate,
+                    $endDate,
+                    'followers'
+                );
+                $latest = (int) ($aggregation['data'] ?? 0);
+            }
+
+            echo "Seguidores {$network} (Analytics v2): {$latest}" . PHP_EOL;
+        } catch (Throwable $e) {
+            echo "Seguidores {$network}: error - {$e->getMessage()}" . PHP_EOL;
+        }
+    }
 
     $scheduled = \Metricool\Services\DataProcessor::unwrapList($api->getScheduledPosts($startDate, $endDate));
     echo 'Programados (/v2/scheduler/posts): ' . count($scheduled) . PHP_EOL;

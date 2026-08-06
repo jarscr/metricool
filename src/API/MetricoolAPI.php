@@ -11,7 +11,7 @@ use Exception;
  * Endpoints vigentes:
  * - Marcas:           GET /admin/simpleProfiles
  * - Posts:            GET /stats/{network}/posts|reels   (start, end)
- * - Analytics:        GET /stats/timeline/{network}       (start, end)
+ * - Analytics:        GET /v2/analytics/timelines         (network, metric, from, to)
  * - Programados:      GET /v2/scheduler/posts             (init_date, end_date)
  * - Competidores:     GET /v2/analytics/competitors/{network} (from, to, limit, timezone)
  *
@@ -39,13 +39,19 @@ class MetricoolAPI
     ];
 
     /** @var list<string> */
-    public const SYNC_ANALYTICS_NETWORKS = [];
+    public const SYNC_ANALYTICS_NETWORKS = [
+        'instagram',
+        'facebook',
+        'tiktok',
+        'facebookads',
+        'googleads',
+    ];
 
     /** @var list<string> */
     public const COMPETITOR_NETWORKS = ['instagram', 'facebook', 'x', 'linkedin'];
 
     /**
-     * Campos de simpleProfiles → slug de timeline (/stats/timeline/{slug}).
+     * Campos de simpleProfiles → slug interno de Analytics v2.
      *
      * @var array<string, string>
      */
@@ -68,7 +74,7 @@ class MetricoolAPI
     public const ADS_ANALYTICS_NETWORKS = ['facebookads', 'googleads', 'tiktokads'];
 
     /** @var list<string> */
-    public const ORGANIC_ANALYTICS_METRICS = ['followers', 'impressions', 'reach', 'likes'];
+    public const ORGANIC_ANALYTICS_METRICS = ['followers'];
 
     /** @var list<string> */
     public const ADS_ANALYTICS_METRICS = ['impressions', 'clicks', 'spend', 'reach'];
@@ -147,13 +153,69 @@ class MetricoolAPI
     {
         $this->requireBlogId();
         $apiNetwork = self::resolveStatsNetwork($network);
-        $params = self::statsDateParams($startDate, $endDate);
+        $spec = self::resolveAnalyticsMetricSpec($network, $metric ?? 'followers');
 
-        if ($metric !== null && $metric !== '') {
-            $params['metric'] = $metric;
+        return $this->makeRequest('/v2/analytics/timelines', [
+            'network' => $apiNetwork,
+            'metric' => $spec['metric'],
+            'from' => $startDate . 'T00:00:00',
+            'to' => $endDate . 'T23:59:59',
+            'timezone' => $this->timezone,
+            'subject' => $spec['subject'],
+        ]);
+    }
+
+    public function getAnalyticsAggregation(
+        string $network,
+        string $startDate,
+        string $endDate,
+        string $metric
+    ): array {
+        $this->requireBlogId();
+        $spec = self::resolveAnalyticsMetricSpec($network, $metric);
+
+        return $this->makeRequest('/v2/analytics/aggregation', [
+            'network' => self::resolveStatsNetwork($network),
+            'metric' => $spec['metric'],
+            'from' => $startDate . 'T00:00:00',
+            'to' => $endDate . 'T23:59:59',
+            'timezone' => $this->timezone,
+            'subject' => $spec['subject'],
+        ]);
+    }
+
+    public function getAdsCampaigns(string $network, string $startDate, string $endDate): array
+    {
+        $this->requireBlogId();
+
+        if (!in_array($network, ['facebookads', 'googleads'], true)) {
+            throw new Exception("Red publicitaria no soportada: {$network}");
         }
 
-        return $this->makeRequest("/stats/timeline/{$apiNetwork}", $params);
+        return $this->makeRequest("/v2/analytics/campaigns/{$network}", [
+            'from' => $startDate . 'T00:00:00',
+            'to' => $endDate . 'T23:59:59',
+            'timezone' => $this->timezone,
+        ]);
+    }
+
+    /**
+     * Traduce los nombres internos a las métricas documentadas por Analytics v2.
+     *
+     * @return array{metric: string, subject: string}
+     */
+    public static function resolveAnalyticsMetricSpec(string $network, string $metric): array
+    {
+        if ($metric !== 'followers') {
+            return ['metric' => $metric, 'subject' => 'account'];
+        }
+
+        return match (self::normalizeAnalyticsNetworkSlug($network)) {
+            'instagram' => ['metric' => 'followers', 'subject' => 'account'],
+            'facebook' => ['metric' => 'pageFollows', 'subject' => 'account'],
+            'tiktok' => ['metric' => 'followers_count', 'subject' => 'account'],
+            default => ['metric' => 'followers', 'subject' => 'account'],
+        };
     }
 
     /**
@@ -165,7 +227,7 @@ class MetricoolAPI
         $networks = [];
 
         foreach (self::BRAND_FIELD_TO_ANALYTICS_NETWORK as $field => $apiNetwork) {
-            if (empty($brand[$field])) {
+            if (!self::hasConnectionValue($brand[$field] ?? null)) {
                 continue;
             }
 

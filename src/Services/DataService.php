@@ -14,7 +14,10 @@ class DataService
     ];
 
     /** @var list<string> */
-    private const ANALYTICS_ONLY_NETWORKS = [];
+    private const ANALYTICS_ONLY_NETWORKS = ['facebookads', 'googleads'];
+
+    /** @var list<string> */
+    private const ADS_NETWORKS = ['facebookads', 'googleads'];
 
     public function __construct(private PDO $pdo)
     {
@@ -60,6 +63,11 @@ class DataService
 
         foreach (self::POST_NETWORKS as $key => $config) {
             $stats = $this->getNetworkStats($key, $brandId, $startDate, $endDate);
+            if (!$stats['has_data']) {
+                continue;
+            }
+
+            unset($stats['has_data']);
             $stats['type'] = 'posts';
             $networks[$key] = $stats;
             $totalPosts += $stats['posts_count'];
@@ -214,38 +222,49 @@ class DataService
             return [];
         }
 
-        $placeholders = implode(',', array_fill(0, count(self::ANALYTICS_ONLY_NETWORKS), '?'));
         $stmt = $this->pdo->prepare(
-            "SELECT network,
-                COALESCE(SUM(impressions), 0) AS impressions_total,
-                COALESCE(SUM(website_clicks), 0) AS clicks_total,
-                COALESCE(SUM(ad_spend), 0) AS ad_spend_total,
-                COALESCE(MAX(followers), 0) AS followers_latest,
-                COALESCE(SUM(reach), 0) AS reach_total
+            'SELECT network,
+                COALESCE(impressions, 0) AS impressions_total,
+                COALESCE(website_clicks, 0) AS clicks_total,
+                COALESCE(reach, 0) AS reach_total
              FROM daily_analytics
-             WHERE brand_id = ?
-             AND date BETWEEN ? AND ?
-             AND network IN ({$placeholders})
-             GROUP BY network"
+             WHERE brand_id = :brand_id
+             AND network = :network
+             AND date BETWEEN :start AND :end
+             ORDER BY date DESC, id DESC
+             LIMIT 1'
         );
 
-        $params = array_merge([$brandId, $startDate, $endDate], self::ANALYTICS_ONLY_NETWORKS);
-        $stmt->execute($params);
-
         $networks = [];
-        foreach ($stmt->fetchAll() as $row) {
-            $network = (string) $row['network'];
+        foreach (self::ANALYTICS_ONLY_NETWORKS as $network) {
+            $stmt->execute([
+                'brand_id' => $brandId,
+                'network' => $network,
+                'start' => $startDate,
+                'end' => $endDate,
+            ]);
+            $row = $stmt->fetch();
+            if (!$row) {
+                continue;
+            }
+
+            $impressions = (int) ($row['impressions_total'] ?? 0);
+            $clicks = (int) ($row['clicks_total'] ?? 0);
+            $reach = (int) ($row['reach_total'] ?? 0);
+
+            if ($impressions === 0 && $clicks === 0 && $reach === 0) {
+                continue;
+            }
 
             $networks[$network] = [
-                'type' => 'analytics',
+                'type' => in_array($network, self::ADS_NETWORKS, true) ? 'ads' : 'analytics',
                 'posts_count' => 0,
                 'likes_total' => 0,
                 'comments_total' => 0,
-                'impressions_total' => (int) ($row['impressions_total'] ?? 0),
-                'clicks_total' => (int) ($row['clicks_total'] ?? 0),
-                'ad_spend_total' => round((float) ($row['ad_spend_total'] ?? 0), 2),
-                'followers_latest' => (int) ($row['followers_latest'] ?? 0),
-                'reach_total' => (int) ($row['reach_total'] ?? 0),
+                'impressions_total' => $impressions,
+                'clicks_total' => $clicks,
+                'followers_latest' => 0,
+                'reach_total' => $reach,
                 'avg_engagement' => 0.0,
             ];
         }
@@ -309,7 +328,7 @@ class DataService
     }
 
     /**
-     * @return array<string, int|float>
+     * @return array<string, int|float|bool>
      */
     private function getNetworkStats(string $network, int $brandId, string $startDate, string $endDate): array
     {
@@ -339,14 +358,61 @@ class DataService
         ]);
 
         $row = $stmt->fetch();
+        $analyticsCount = $this->countAnalyticsRows($network, $brandId, $startDate, $endDate);
+        $followersLatest = $this->getLatestFollowers($network, $brandId, $endDate);
+        $postsCount = (int) ($row['posts_count'] ?? 0);
 
         return [
-            'posts_count' => (int) ($row['posts_count'] ?? 0),
+            'posts_count' => $postsCount,
             'likes_total' => (int) ($row['likes_total'] ?? 0),
             'comments_total' => (int) ($row['comments_total'] ?? 0),
             'impressions_total' => (int) ($row['impressions_total'] ?? 0),
             'avg_engagement' => round((float) ($row['avg_engagement'] ?? 0), 2),
+            'followers_latest' => $followersLatest,
+            'has_data' => $postsCount > 0 || $analyticsCount > 0 || $followersLatest > 0,
         ];
+    }
+
+    private function countAnalyticsRows(
+        string $network,
+        int $brandId,
+        string $startDate,
+        string $endDate
+    ): int {
+        $stmt = $this->pdo->prepare(
+            'SELECT COUNT(*) FROM daily_analytics
+             WHERE brand_id = :brand_id
+             AND network = :network
+             AND date BETWEEN :start AND :end'
+        );
+        $stmt->execute([
+            'brand_id' => $brandId,
+            'network' => $network,
+            'start' => $startDate,
+            'end' => $endDate,
+        ]);
+
+        return (int) $stmt->fetchColumn();
+    }
+
+    private function getLatestFollowers(string $network, int $brandId, string $endDate): int
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT followers FROM daily_analytics
+             WHERE brand_id = :brand_id
+             AND network = :network
+             AND date <= :end
+             AND followers > 0
+             ORDER BY date DESC, id DESC
+             LIMIT 1'
+        );
+        $stmt->execute([
+            'brand_id' => $brandId,
+            'network' => $network,
+            'end' => $endDate,
+        ]);
+
+        return (int) ($stmt->fetchColumn() ?: 0);
     }
 
     /**

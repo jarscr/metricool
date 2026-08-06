@@ -40,15 +40,20 @@ $csrfToken = AuthMiddleware::csrfToken();
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Acceso | Panel de rendimiento</title>
+    <title>Acceso | IDEAS MCW</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="assets/css/dashboard.css?v=<?= (int) filemtime(__DIR__ . '/assets/css/dashboard.css') ?>">
+    <link rel="shortcut icon" type="image/x-icon" href="/assets/images/icon.png">
+    <link rel="apple-touch-icon" href="/assets/images/icon.png"/>
 </head>
 <body class="login-page">
     <main class="auth-shell">
         <section class="auth-intro" aria-labelledby="loginProductTitle">
             <div>
                 <div class="auth-brand">
-                    <div class="product-mark" aria-hidden="true"><span></span><span></span><span></span></div>
+                    <div><img src="/assets/images/logo.png" alt="IDEAS MCW" width="200" height="100"></div>
                     <div>
                         <p class="eyebrow">Social intelligence</p>
                         <strong>Panel de rendimiento</strong>

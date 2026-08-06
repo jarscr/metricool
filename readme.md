@@ -25,7 +25,15 @@ Cada usuario de empresa queda ligado a un único `brand_id`. El servidor valida 
 php console/sync.php
 ```
 
-Rango manual:
+Sin parámetros, el comando trabaja en modo incremental y sincroniza únicamente ayer y hoy según `METRICOOL_TIMEZONE`. El día anterior se incluye para recuperar información que Metricool pudiera publicar después de medianoche. Las operaciones son actualizaciones idempotentes, por lo que ejecutar varias veces el mismo rango no duplica los registros.
+
+Ejemplo de cron cuatro veces al día, cada seis horas:
+
+```cron
+0 */6 * * * cd /ruta/al/proyecto && /usr/bin/php console/sync.php >> logs/cron.log 2>&1
+```
+
+Rango manual para una carga histórica:
 
 ```bash
 php console/sync.php --start=2026-01-01 --end=2026-08-05
