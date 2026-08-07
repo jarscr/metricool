@@ -24,7 +24,7 @@ $currentUser = AuthMiddleware::currentUser();
     <link rel="shortcut icon" type="image/x-icon" href="/assets/images/icon.png">
     <link rel="apple-touch-icon" href="/assets/images/icon.png"/>
 </head>
-<body>
+<body class="dashboard-page--brand-gradient">
     <div class="app">
         <header class="header">
             <div class="header__identity">

@@ -48,7 +48,7 @@ $csrfToken = AuthMiddleware::csrfToken();
     <link rel="shortcut icon" type="image/x-icon" href="/assets/images/icon.png">
     <link rel="apple-touch-icon" href="/assets/images/icon.png"/>
 </head>
-<body class="login-page">
+<body class="login-page login-page--brand-gradient">
     <main class="auth-shell">
         <section class="auth-intro" aria-labelledby="loginProductTitle">
             <div>
@@ -63,24 +63,19 @@ $csrfToken = AuthMiddleware::csrfToken();
                 <div class="auth-intro__copy">
                     <p class="eyebrow">Decisiones con contexto</p>
                     <h1 id="loginProductTitle">Tus canales sociales,<br>en una sola lectura.</h1>
-                    <p>Consulta el rendimiento de cada marca con información sincronizada y acceso independiente por empresa.</p>
+                    <p>Consulta el rendimiento de la marca con información reciente.</p>
                 </div>
             </div>
 
-            <ul class="auth-features" aria-label="Características del acceso">
-                <li><span aria-hidden="true">01</span>Información delimitada por marca</li>
-                <li><span aria-hidden="true">02</span>Acceso privado para cada empresa</li>
-                <li><span aria-hidden="true">03</span>Facebook, Instagram y TikTok</li>
-            </ul>
+           
         </section>
 
         <section class="auth-panel" aria-labelledby="loginTitle">
             <div class="auth-panel__content">
                 <div class="auth-panel__status"><span aria-hidden="true"></span> Acceso seguro</div>
                 <div class="auth-panel__heading">
-                    <p class="eyebrow">Área privada</p>
+                    <p class="eyebrow">Dashboard de rendimiento</p>
                     <h2 id="loginTitle">Bienvenido</h2>
-                    <p>Ingresa las credenciales asignadas a tu empresa.</p>
                 </div>
 
                 <?php if ($error): ?>
@@ -106,7 +101,7 @@ $csrfToken = AuthMiddleware::csrfToken();
                     </button>
                 </form>
 
-                <p class="auth-help">Si no tienes acceso o necesitas restablecerlo, contacta al administrador de tu empresa.</p>
+                <p class="auth-help">Si no tienes acceso o necesitas restablecerlo, contacta a IDEAS MCW.</p>
             </div>
 
             <footer class="auth-footer">

@@ -11,7 +11,7 @@
     --line-strong: #774153;
     --text: #fff8fa;
     --text-soft: #ead8de;
-    --muted: #c2a1ac;
+    --muted: #ffffff;
     --accent: var(--brand-primary);
     --accent-hover: #df4769;
     --accent-ink: #ffffff;
@@ -1168,6 +1168,11 @@ select {
     background-position: center center;
 }
 
+.login-page--brand-gradient,
+.dashboard-page--brand-gradient {
+    background: linear-gradient(135deg, #00ccbf 0%, #ca3457 52%, #7d2236 100%);
+}
+
 .auth-shell {
     display: grid;
     grid-template-columns: minmax(0, 1.08fr) minmax(420px, 0.92fr);
@@ -1743,6 +1748,10 @@ select {
         display: block;
         padding: 0;
         background: var(--canvas);
+    }
+
+    .login-page--brand-gradient {
+        background: linear-gradient(135deg, #00ccbf 0%, #ca3457 52%, #7d2236 100%);
     }
 
     .auth-shell {
