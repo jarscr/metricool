@@ -340,7 +340,7 @@ function renderTrendChart({ canvasId, rows, metric, networkFilter, hintId, ignor
     const scales = {
         x: {
             ticks: {
-                color: '#c2a1ac',
+                color: '#4b4b4b',
                 maxRotation: 0,
                 autoSkip: true,
                 maxTicksLimit: 12,
@@ -349,7 +349,7 @@ function renderTrendChart({ canvasId, rows, metric, networkFilter, hintId, ignor
                 },
             },
             grid: { display: false },
-            border: { color: '#774153' },
+            border: { color: '#c9c9c9' },
         },
         yPrimary: chartScale('left', true),
     };
@@ -393,7 +393,7 @@ function getScaleSplit(rows, networks, metric, ignoreZero) {
     return maxima.at(-1).maximum >= maxima[0].maximum * 8 ? maxima[0].network : null;
 }
 
-function chartScale(position, drawGrid, color = '#c2a1ac') {
+function chartScale(position, drawGrid, color = '#4b4b4b') {
     return {
         type: 'linear',
         position,
@@ -403,7 +403,7 @@ function chartScale(position, drawGrid, color = '#c2a1ac') {
             maxTicksLimit: 5,
             callback: (value) => formatCompactNumber(value),
         },
-        grid: drawGrid ? { color: 'rgba(194, 161, 172, 0.13)' } : { drawOnChartArea: false },
+        grid: drawGrid ? { color: 'rgba(17, 17, 17, 0.1)' } : { drawOnChartArea: false },
         border: { display: false },
     };
 }

@@ -1168,9 +1168,63 @@ select {
     background-position: center center;
 }
 
-.login-page--brand-gradient,
-.dashboard-page--brand-gradient {
+.login-page--brand-gradient {
     background: linear-gradient(135deg, #00ccbf 0%, #ca3457 52%, #7d2236 100%);
+}
+
+.dashboard-page--brand-gradient {
+    --canvas: #f2024a;
+    --surface: #ffffff;
+    --surface-raised: #ffffff;
+    --surface-soft: #ffffff;
+    --field-background: #ffffff;
+    --line: #dedede;
+    --line-strong: #c9c9c9;
+    --text: #111111;
+    --text-soft: #242424;
+    --muted: #4b4b4b;
+    --dashboard-dark: #8c012b;
+    --shadow: 0 18px 60px rgba(70, 0, 21, 0.18);
+    background: var(--canvas);
+}
+
+.dashboard-page--brand-gradient .filter-bar {
+    border-color: rgba(255, 255, 255, 0.24);
+    background: var(--dashboard-dark);
+    color: #ffffff;
+}
+
+.dashboard-page--brand-gradient .filter-bar .eyebrow,
+.dashboard-page--brand-gradient .filter-bar .field {
+    color: #ffffff;
+}
+
+.dashboard-page--brand-gradient .filter-bar .field input,
+.dashboard-page--brand-gradient .filter-bar .field select {
+    border-color: rgba(255, 255, 255, 0.28);
+    background: rgba(40, 0, 12, 0.36);
+    color: #ffffff;
+    color-scheme: dark;
+}
+
+.dashboard-page--brand-gradient .trend-network-card--instagram,
+.dashboard-page--brand-gradient .trend-network-card--facebook,
+.dashboard-page--brand-gradient .trend-network-card--tiktok {
+    background: #ffffff;
+}
+
+.dashboard-page--brand-gradient .network-badge--instagram { color: #b51d51; }
+.dashboard-page--brand-gradient .network-badge--facebook { color: #135fbf; }
+.dashboard-page--brand-gradient .network-badge--tiktok { color: #08736f; }
+.dashboard-page--brand-gradient .network-badge--x { color: #364152; }
+.dashboard-page--brand-gradient .network-badge--linkedin { color: #07558f; }
+.dashboard-page--brand-gradient .network-badge--youtube { color: #b00000; }
+.dashboard-page--brand-gradient .network-badge--facebookads { color: #0754b3; }
+.dashboard-page--brand-gradient .network-badge--googleads { color: #217a38; }
+.dashboard-page--brand-gradient .network-badge--tiktokads { color: #b91c3b; }
+
+.dashboard-page--brand-gradient .status-label {
+    color: #17643f;
 }
 
 .auth-shell {
