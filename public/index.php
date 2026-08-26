@@ -28,9 +28,8 @@ $currentUser = AuthMiddleware::currentUser();
     <div class="app">
         <header class="header">
             <div class="header__identity">
-                <div><img src="/assets/images/logo.png" alt="IDEAS MCW" width="200" height="100"></div>
+                <div><img src="/assets/images/logo.png" alt="IDEAS MCW" width="200"></div>
                 <div class="header__brand">
-                    <p class="eyebrow">IDEAS MCW</p>
                     <h1>Panel de rendimiento</h1>
                     <p class="header__subtitle">Resumen operativo de tus canales sociales</p>
                 </div>
@@ -186,7 +185,7 @@ $currentUser = AuthMiddleware::currentUser();
         </section>
 
         <footer class="app-footer">
-            <span>Panel de analítica social</span>
+            <span>Panel de rendimiento by IDEAS MCW</span>
             <span>Desarrollado por <strong>JARS Costa Rica</strong> · <?= date('Y') ?></span>
         </footer>
     </div>

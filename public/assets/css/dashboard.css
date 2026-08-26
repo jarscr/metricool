@@ -316,7 +316,7 @@ select {
 
 .section-heading > p {
     margin: 0;
-    color: var(--muted);
+    color: var(--muted) !important;
     font-size: 0.77rem;
 }
 
@@ -886,9 +886,55 @@ select {
 }
 
 .admin-page {
-    background:
-        radial-gradient(circle at 82% 8%, rgba(125, 34, 54, 0.12), transparent 28%),
-        var(--canvas);
+    --surface: #ffffff;
+    --surface-raised: #ffffff;
+    --surface-soft: #ffffff;
+    --field-background: #ffffff;
+    --line: #dedede;
+    --line-strong: #c9c9c9;
+    --text: #111111;
+    --text-soft: #242424;
+    --muted: #4b4b4b;
+    --shadow: 0 18px 60px rgba(70, 0, 21, 0.18);
+    background: #f2024a;
+}
+
+.admin-page .admin-header,
+.admin-page .admin-header .eyebrow,
+.admin-page .admin-header .header__subtitle,
+.admin-page .admin-header .user-chip small,
+.admin-page .admin-header .user-chip strong,
+.admin-page .admin-header .btn--quiet,
+.admin-page .app-footer,
+.admin-page .app-footer strong {
+    color: #ffffff;
+}
+
+.admin-page .admin-header .user-chip {
+    border-right-color: rgba(255, 255, 255, 0.55);
+}
+
+.admin-page .app-footer {
+    border-top-color: rgba(255, 255, 255, 0.55);
+}
+
+.admin-page .admin-notice,
+.admin-page .error-box {
+    background: #ffffff;
+    color: #111111;
+}
+
+.admin-page input,
+.admin-page select {
+    color-scheme: light;
+}
+
+.admin-page .account-status--active {
+    color: #17643f;
+}
+
+.admin-page .account-status--inactive {
+    color: #a51d28;
 }
 
 .app--admin {
@@ -1188,6 +1234,29 @@ select {
     background: var(--canvas);
 }
 
+.dashboard-page--brand-gradient .header,
+.dashboard-page--brand-gradient .header .eyebrow,
+.dashboard-page--brand-gradient .header__subtitle,
+.dashboard-page--brand-gradient .user-chip small,
+.dashboard-page--brand-gradient .user-chip strong,
+.dashboard-page--brand-gradient .header .btn--quiet,
+.dashboard-page--brand-gradient .sync-banner,
+.dashboard-page--brand-gradient .section-heading,
+.dashboard-page--brand-gradient .section-heading .eyebrow,
+.dashboard-page--brand-gradient .section-heading > p,
+.dashboard-page--brand-gradient .app-footer,
+.dashboard-page--brand-gradient .app-footer strong {
+    color: #ffffff !important;
+}
+
+.dashboard-page--brand-gradient .user-chip {
+    border-right-color: rgba(255, 255, 255, 0.55);
+}
+
+.dashboard-page--brand-gradient .app-footer {
+    border-top-color: rgba(255, 255, 255, 0.55);
+}
+
 .dashboard-page--brand-gradient .filter-bar {
     border-color: rgba(255, 255, 255, 0.24);
     background: var(--dashboard-dark);
@@ -1248,8 +1317,8 @@ select {
     padding: 46px 50px;
     border-right: 1px solid var(--line);
     background:
-        radial-gradient(circle at 12% 90%, rgba(202, 52, 87, 0.2), transparent 32%),
-        var(--surface-soft);
+        linear-gradient(rgba(72, 0, 22, 0.18), rgba(72, 0, 22, 0.18)),
+        url("../images/fondo_ideas.jpg") center / cover no-repeat;
 }
 
 .auth-intro::after {
@@ -1345,7 +1414,7 @@ select {
     flex-direction: column;
     justify-content: space-between;
     padding: 46px 48px 30px;
-    background: var(--surface);
+    background: #a3002d;
 }
 
 .auth-panel__content {

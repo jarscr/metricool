@@ -89,7 +89,7 @@ $currentUser = AuthMiddleware::currentUser();
     <div class="app app--admin">
         <header class="header admin-header">
             <div class="header__identity">
-                <div class="product-mark" aria-hidden="true"><span></span><span></span><span></span></div>
+                <div><img src="/assets/images/logo.png" alt="IDEAS MCW" width="200"></div>
                 <div class="header__brand">
                     <p class="eyebrow">Configuración</p>
                     <h1>Administración de accesos</h1>

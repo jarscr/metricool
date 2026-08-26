@@ -53,7 +53,7 @@ $csrfToken = AuthMiddleware::csrfToken();
         <section class="auth-intro" aria-labelledby="loginProductTitle">
             <div>
                 <div class="auth-brand">
-                    <div><img src="/assets/images/logo.png" alt="IDEAS MCW" width="200" height="100"></div>
+                    <div><img src="/assets/images/logo.png" alt="IDEAS MCW" width="200"></div>
                     <div>
                         <p class="eyebrow">Social intelligence</p>
                         <strong>Panel de rendimiento</strong>
