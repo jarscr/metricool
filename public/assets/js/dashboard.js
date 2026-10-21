@@ -1,5 +1,6 @@
 let analyticsChart = null;
 let followersChart = null;
+let currentReportData = null;
 
 const networkLabels = {
     instagram: 'Instagram',
@@ -23,6 +24,7 @@ const networkColors = {
 document.addEventListener('DOMContentLoaded', () => {
     initDates();
     document.getElementById('applyFilters').addEventListener('click', loadDashboard);
+    document.getElementById('downloadReport').addEventListener('click', downloadDashboardReport);
     loadBrands();
 });
 
@@ -70,6 +72,9 @@ async function loadBrands() {
 async function loadDashboard() {
     hideError();
 
+    const reportButton = document.getElementById('downloadReport');
+    currentReportData = null;
+    reportButton.disabled = true;
     const brandId = document.getElementById('brandSelect').value;
     const startDate = document.getElementById('startDate').value;
     const endDate = document.getElementById('endDate').value;
@@ -91,9 +96,404 @@ async function loadDashboard() {
         renderFollowersChart(analytics.data, network);
         renderPosts(posts.data, network);
         renderScheduled(scheduled.data);
+        currentReportData = {
+            overview: overview.data,
+            analytics: analytics.data,
+            network,
+            posts: posts.data,
+            scheduled: scheduled.data,
+            syncStatus: syncStatus.data,
+        };
+        reportButton.disabled = false;
     } catch (error) {
         showError(error.message);
     }
+}
+
+async function downloadDashboardReport() {
+    if (!currentReportData) {
+        showError('Primero actualiza el dashboard para generar el reporte.');
+        return;
+    }
+
+    const button = document.getElementById('downloadReport');
+    const originalLabel = button.textContent;
+    button.disabled = true;
+    button.textContent = 'Generando...';
+    hideError();
+
+    try {
+        await document.fonts?.ready;
+        const canvases = buildReportCanvases(currentReportData);
+        const images = await Promise.all(canvases.map(async (canvas) => {
+            const jpegBlob = await canvasToBlob(canvas, 'image/jpeg', 0.94);
+            return {
+                bytes: new Uint8Array(await jpegBlob.arrayBuffer()),
+                width: canvas.width,
+                height: canvas.height,
+            };
+        }));
+        const pdfBlob = createPdfFromJpegs(images);
+        triggerDownload(pdfBlob, buildReportFilename(currentReportData.overview));
+    } catch (error) {
+        showError(`No fue posible generar el PDF: ${error.message}`);
+    } finally {
+        button.disabled = false;
+        button.textContent = originalLabel;
+    }
+}
+
+function buildReportCanvases(reportData) {
+    const pages = [buildSummaryReportPage(reportData), buildDetailsReportPage(reportData)];
+    pages.push(...buildListReportPages(reportData));
+    pages.forEach((canvas, index) => drawReportFooter(canvas.getContext('2d'), index + 1, pages.length));
+    return pages;
+}
+
+function buildSummaryReportPage({ overview, analytics, network, syncStatus }) {
+    const canvas = createReportPage(overview, 'Resumen del dashboard');
+    const ctx = canvas.getContext('2d');
+    const selectedNetworks = network
+        ? [network]
+        : organicNetworks.filter((item) => overview.networks[item]?.type === 'posts');
+    const impressionTotal = analytics
+        .filter((row) => selectedNetworks.includes(row.network))
+        .reduce((total, row) => total + Number(row.impressions || 0), 0);
+    const followerTotal = selectedNetworks.reduce(
+        (total, item) => total + Number(overview.networks[item]?.followers_latest || 0),
+        0
+    );
+
+    const lastSync = syncStatus?.created_at
+        ? new Date(syncStatus.created_at).toLocaleString('es-CR')
+        : 'sin registros';
+    ctx.fillStyle = '#6b5960';
+    ctx.font = '400 18px Roboto, Arial, sans-serif';
+    ctx.fillText(`Última sincronización: ${lastSync} (${syncStatus?.status || 'N/A'})`, 76, 166);
+
+    drawReportMetric(ctx, 76, 190, 350, 'Publicaciones', overview.totals.posts);
+    drawReportMetric(ctx, 460, 190, 350, 'Me gusta', overview.totals.likes);
+    drawReportMetric(ctx, 844, 190, 350, 'Impresiones', impressionTotal);
+    drawReportMetric(ctx, 1228, 190, 380, 'Seguidores', followerTotal);
+
+    const charts = [
+        { canvas: document.getElementById('followersChart'), title: 'Evolución de seguidores' },
+        { canvas: document.getElementById('analyticsChart'), title: 'Evolución de impresiones' },
+    ].filter((item) => item.canvas && !item.canvas.classList.contains('hidden'));
+
+    const chartHeight = charts.length > 1 ? 340 : 700;
+    charts.forEach((item, index) => {
+        const y = 352 + index * 380;
+        drawReportChart(ctx, item.canvas, item.title, 76, y, 1532, chartHeight);
+    });
+
+    if (!charts.length) {
+        ctx.fillStyle = '#f7f2f4';
+        ctx.fillRect(76, 352, 1532, 670);
+        ctx.fillStyle = '#6b5960';
+        ctx.font = '500 27px Roboto, Arial, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('No hay datos para graficar en el período seleccionado.', 842, 690);
+        ctx.textAlign = 'left';
+    }
+    return canvas;
+}
+
+function buildDetailsReportPage({ overview }) {
+    const canvas = createReportPage(overview, 'Actividad y publicidad');
+    const ctx = canvas.getContext('2d');
+    const organic = organicNetworks.filter((network) => overview.networks[network]?.type === 'posts');
+    const activity = [
+        ['Total posts', overview.totals.posts],
+        ['Total likes', overview.totals.likes],
+        ['Programados', overview.totals.scheduled_pending],
+        ...organic.map((network) => [`${networkLabels[network]} posts`, overview.networks[network].posts_count]),
+    ];
+
+    drawReportSectionTitle(ctx, 'Panorama general', 176);
+    activity.forEach(([label, value], index) => {
+        const column = index % 3;
+        const row = Math.floor(index / 3);
+        drawReportMetric(ctx, 76 + column * 520, 210 + row * 145, 488, label, value);
+    });
+
+    const activityRows = Math.max(1, Math.ceil(activity.length / 3));
+    let y = 230 + activityRows * 145;
+    drawReportSectionTitle(ctx, 'Rendimiento de anuncios', y);
+    y += 34;
+    const ads = adsNetworks.filter((network) => overview.networks[network]?.type === 'ads');
+    if (!ads.length) {
+        drawReportEmpty(ctx, 'No hay datos publicitarios en el período seleccionado.', y, 210);
+        return canvas;
+    }
+
+    ads.forEach((network, index) => {
+        const stats = overview.networks[network];
+        const x = 76 + index * 778;
+        drawAdsReportCard(ctx, x, y, 746, networkLabels[network], stats);
+    });
+    return canvas;
+}
+
+function buildListReportPages({ overview, posts, scheduled }) {
+    return [
+        ...paginateReportList(overview, 'Publicaciones recientes', posts, 'No hay publicaciones en el período seleccionado.', false),
+        ...paginateReportList(overview, 'Posts programados', scheduled, 'No hay posts programados pendientes.', true),
+    ];
+}
+
+function paginateReportList(overview, title, items, emptyMessage, scheduled) {
+    const perPage = 7;
+    const chunks = items.length
+        ? Array.from({ length: Math.ceil(items.length / perPage) }, (_, index) => items.slice(index * perPage, (index + 1) * perPage))
+        : [[]];
+
+    return chunks.map((chunk, pageIndex) => {
+        const suffix = chunks.length > 1 ? ` (${pageIndex + 1}/${chunks.length})` : '';
+        const canvas = createReportPage(overview, `${title}${suffix}`);
+        const ctx = canvas.getContext('2d');
+        if (!chunk.length) {
+            drawReportEmpty(ctx, emptyMessage, 190, 770);
+            return canvas;
+        }
+
+        chunk.forEach((item, index) => drawReportListItem(ctx, item, 76, 176 + index * 132, scheduled));
+        return canvas;
+    });
+}
+
+function createReportPage(overview, sectionTitle) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 1684;
+    canvas.height = 1190;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#6c002e';
+    ctx.fillRect(0, 0, canvas.width, 132);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '700 44px Roboto, Arial, sans-serif';
+    ctx.fillText(sectionTitle, 76, 62);
+    ctx.font = '400 23px Roboto, Arial, sans-serif';
+    ctx.fillText(overview.brand?.name || 'Marca', 76, 101);
+    ctx.textAlign = 'right';
+    ctx.fillText(`${formatReportDate(overview.period.start)} - ${formatReportDate(overview.period.end)}`, 1608, 82);
+    ctx.textAlign = 'left';
+    return canvas;
+}
+
+function drawReportFooter(ctx, page, totalPages) {
+    ctx.fillStyle = '#6b5960';
+    ctx.font = '400 18px Roboto, Arial, sans-serif';
+    ctx.fillText(`Generado el ${new Date().toLocaleString('es-CR')}`, 76, 1147);
+    ctx.textAlign = 'right';
+    ctx.fillText(`Panel de rendimiento by IDEAS MCW · Página ${page} de ${totalPages}`, 1608, 1147);
+    ctx.textAlign = 'left';
+}
+
+function drawReportSectionTitle(ctx, title, y) {
+    ctx.fillStyle = '#2d151c';
+    ctx.font = '700 28px Roboto, Arial, sans-serif';
+    ctx.fillText(title, 76, y);
+}
+
+function drawAdsReportCard(ctx, x, y, width, label, stats) {
+    ctx.fillStyle = '#f7f2f4';
+    ctx.fillRect(x, y, width, 210);
+    ctx.fillStyle = '#2d151c';
+    ctx.font = '700 26px Roboto, Arial, sans-serif';
+    ctx.fillText(label, x + 28, y + 45);
+    const metrics = [
+        ['Impresiones', stats.impressions_total],
+        ['Clics', stats.clicks_total],
+        ['Alcance', stats.reach_total],
+    ];
+    metrics.forEach(([metric, value], index) => {
+        const metricX = x + 28 + index * 230;
+        ctx.fillStyle = '#6b5960';
+        ctx.font = '500 18px Roboto, Arial, sans-serif';
+        ctx.fillText(metric, metricX, y + 99);
+        ctx.fillStyle = '#2d151c';
+        ctx.font = '700 34px Roboto, Arial, sans-serif';
+        ctx.fillText(formatNumber(value), metricX, y + 151);
+    });
+}
+
+function drawReportListItem(ctx, item, x, y, scheduled) {
+    ctx.fillStyle = '#f7f2f4';
+    ctx.fillRect(x, y, 1532, 112);
+    const network = networkLabels[item.network] || item.network || 'Red';
+    ctx.fillStyle = '#6c002e';
+    ctx.font = '700 18px Roboto, Arial, sans-serif';
+    ctx.fillText(network, x + 22, y + 30);
+    const text = scheduled ? (item.content || 'Sin contenido') : (item.text || 'Sin contenido');
+    ctx.fillStyle = '#2d151c';
+    ctx.font = '400 19px Roboto, Arial, sans-serif';
+    drawWrappedText(ctx, text, x + 22, y + 61, 940, 25, 2);
+    ctx.textAlign = 'right';
+    ctx.fillStyle = '#6b5960';
+    ctx.font = '400 17px Roboto, Arial, sans-serif';
+    if (scheduled) {
+        ctx.fillText(formatDateTime(item.scheduled_date), x + 1508, y + 42);
+        ctx.fillText(item.status || 'Pendiente', x + 1508, y + 76);
+    } else {
+        ctx.fillText(formatDateTime(item.published_date), x + 1508, y + 31);
+        ctx.fillText(`Me gusta ${formatNumber(item.likes)} · Comentarios ${formatNumber(item.comments)} · Impresiones ${formatNumber(item.impressions)}`, x + 1508, y + 69);
+    }
+    ctx.textAlign = 'left';
+}
+
+function drawWrappedText(ctx, text, x, y, maxWidth, lineHeight, maxLines) {
+    const words = String(text).replace(/\s+/g, ' ').trim().split(' ');
+    let line = '';
+    let lineIndex = 0;
+    for (const word of words) {
+        const candidate = line ? `${line} ${word}` : word;
+        if (ctx.measureText(candidate).width <= maxWidth) {
+            line = candidate;
+            continue;
+        }
+        ctx.fillText(line, x, y + lineIndex * lineHeight);
+        lineIndex += 1;
+        line = word;
+        if (lineIndex >= maxLines) return;
+    }
+    if (lineIndex < maxLines && line) ctx.fillText(line, x, y + lineIndex * lineHeight);
+}
+
+function drawReportEmpty(ctx, message, y, height) {
+    ctx.fillStyle = '#f7f2f4';
+    ctx.fillRect(76, y, 1532, height);
+    ctx.fillStyle = '#6b5960';
+    ctx.font = '500 25px Roboto, Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(message, 842, y + height / 2);
+    ctx.textAlign = 'left';
+}
+
+function drawReportMetric(ctx, x, y, width, label, value) {
+    ctx.fillStyle = '#f7f2f4';
+    ctx.fillRect(x, y, width, 122);
+    ctx.fillStyle = '#6b5960';
+    ctx.font = '500 20px Roboto, Arial, sans-serif';
+    ctx.fillText(label, x + 24, y + 39);
+    ctx.fillStyle = '#2d151c';
+    ctx.font = '700 39px Roboto, Arial, sans-serif';
+    ctx.fillText(formatNumber(value), x + 24, y + 91);
+}
+
+function drawReportChart(ctx, sourceCanvas, title, x, y, width, height) {
+    ctx.fillStyle = '#2d151c';
+    ctx.font = '700 25px Roboto, Arial, sans-serif';
+    ctx.fillText(title, x, y + 31);
+    ctx.strokeStyle = '#e1d5d9';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x, y + 52, width, height - 52);
+    ctx.drawImage(sourceCanvas, x + 18, y + 70, width - 36, height - 88);
+}
+
+function canvasToBlob(canvas, type, quality) {
+    return new Promise((resolve, reject) => {
+        canvas.toBlob((blob) => {
+            if (blob) resolve(blob);
+            else reject(new Error('El navegador no pudo preparar la imagen del reporte.'));
+        }, type, quality);
+    });
+}
+
+function createPdfFromJpeg(jpegBytes, imageWidth, imageHeight) {
+    return createPdfFromJpegs([{ bytes: jpegBytes, width: imageWidth, height: imageHeight }]);
+}
+
+function createPdfFromJpegs(images) {
+    const encoder = new TextEncoder();
+    const pageWidth = 842;
+    const pageHeight = 595;
+    const content = `q\n${pageWidth} 0 0 ${pageHeight} 0 0 cm\n/ReportImage Do\nQ`;
+    const pageObjectNumbers = images.map((_, index) => 3 + index * 3);
+    const objects = [
+        encoder.encode('<< /Type /Catalog /Pages 2 0 R >>'),
+        encoder.encode(`<< /Type /Pages /Kids [${pageObjectNumbers.map((number) => `${number} 0 R`).join(' ')}] /Count ${images.length} >>`),
+    ];
+    images.forEach((image, index) => {
+        const pageObject = pageObjectNumbers[index];
+        const imageObject = pageObject + 1;
+        const contentObject = pageObject + 2;
+        objects.push(
+            encoder.encode(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Resources << /XObject << /ReportImage ${imageObject} 0 R >> >> /Contents ${contentObject} 0 R >>`),
+            joinByteArrays([
+                encoder.encode(`<< /Type /XObject /Subtype /Image /Width ${image.width} /Height ${image.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${image.bytes.length} >>\nstream\n`),
+                image.bytes,
+                encoder.encode('\nendstream'),
+            ]),
+            encoder.encode(`<< /Length ${encoder.encode(content).length} >>\nstream\n${content}\nendstream`)
+        );
+    });
+    const chunks = [encoder.encode('%PDF-1.4\n%PDFREPORT\n')];
+    const offsets = [0];
+    let length = chunks[0].length;
+
+    objects.forEach((object, index) => {
+        offsets.push(length);
+        const header = encoder.encode(`${index + 1} 0 obj\n`);
+        const footer = encoder.encode('\nendobj\n');
+        chunks.push(header, object, footer);
+        length += header.length + object.length + footer.length;
+    });
+
+    const xrefOffset = length;
+    const xref = [
+        'xref',
+        `0 ${objects.length + 1}`,
+        '0000000000 65535 f ',
+        ...offsets.slice(1).map((offset) => `${String(offset).padStart(10, '0')} 00000 n `),
+        `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>`,
+        `startxref\n${xrefOffset}`,
+        '%%EOF',
+    ].join('\n');
+    chunks.push(encoder.encode(`${xref}\n`));
+    return new Blob(chunks, { type: 'application/pdf' });
+}
+
+function joinByteArrays(chunks) {
+    const totalLength = chunks.reduce((total, chunk) => total + chunk.length, 0);
+    const result = new Uint8Array(totalLength);
+    let offset = 0;
+    chunks.forEach((chunk) => {
+        result.set(chunk, offset);
+        offset += chunk.length;
+    });
+    return result;
+}
+
+function triggerDownload(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+}
+
+function buildReportFilename(overview) {
+    const brand = String(overview.brand?.name || 'marca')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-zA-Z0-9]+/g, '-')
+        .replace(/^-|-$/g, '')
+        .toLowerCase();
+    return `reporte-${brand || 'marca'}-${overview.period.start}-${overview.period.end}.pdf`;
+}
+
+function formatReportDate(value) {
+    if (!value) return '';
+    return new Date(`${value}T00:00:00`).toLocaleDateString('es-CR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+    });
 }
 
 function updateNetworkFilter(networks) {

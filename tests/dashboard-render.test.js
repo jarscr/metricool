@@ -44,6 +44,8 @@ const context = vm.createContext({
     console,
     Intl,
     Date,
+    Blob,
+    TextEncoder,
     ApiClient: {},
     Chart: function Chart() {},
     document: {
@@ -114,4 +116,28 @@ assert(
     'Debe separar la escala de la red pequeña para que su línea continúe visible'
 );
 
-console.log('[ok] dashboard render condicional, seguidores y Ads sin gasto');
+context.__reportOverview = {
+    brand: { name: 'IDEAS Café' },
+    period: { start: '2026-08-01', end: '2026-08-31' },
+};
+assert(
+    vm.runInContext('buildReportFilename(__reportOverview)', context) === 'reporte-ideas-cafe-2026-08-01-2026-08-31.pdf',
+    'El nombre del PDF debe identificar la marca y el período seleccionado'
+);
+
+(async () => {
+    const pdfBlob = vm.runInContext('createPdfFromJpeg(new Uint8Array([255, 216, 255, 217]), 100, 50)', context);
+    const pdfText = Buffer.from(await pdfBlob.arrayBuffer()).toString('latin1');
+    assert(pdfText.startsWith('%PDF-1.4'), 'La descarga debe producir un documento PDF');
+    assert(pdfText.includes('/DCTDecode'), 'El PDF debe incluir la gráfica renderizada como imagen');
+    const multiPageBlob = vm.runInContext(`createPdfFromJpegs([
+        { bytes: new Uint8Array([255, 216, 255, 217]), width: 100, height: 50 },
+        { bytes: new Uint8Array([255, 216, 255, 217]), width: 100, height: 50 }
+    ])`, context);
+    const multiPageText = Buffer.from(await multiPageBlob.arrayBuffer()).toString('latin1');
+    assert(multiPageText.includes('/Count 2'), 'El reporte completo debe admitir varias páginas');
+    console.log('[ok] dashboard render condicional, seguidores, Ads y reporte PDF por período');
+})().catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+});

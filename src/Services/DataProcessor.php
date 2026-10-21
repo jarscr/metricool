@@ -108,21 +108,21 @@ class DataProcessor
             return null;
         }
 
-        $likes = (int) ($post['likes'] ?? $post['reactions'] ?? 0);
+        $likes = (int) ($post['likes'] ?? $post['reactions'] ?? $post['postVideoReactions'] ?? 0);
         $comments = (int) ($post['comments'] ?? 0);
-        $reach = (int) ($post['reach'] ?? $post['impressionsUnique'] ?? 0);
+        $reach = (int) ($post['reach'] ?? $post['impressionsUnique'] ?? $post['postImpressionsUnique'] ?? 0);
         $clicks = (int) ($post['clicks'] ?? $post['linkclicks'] ?? 0);
 
         return [
             'post_id' => self::truncateString($postId, self::POST_ID_MAX_LENGTH),
             'brand_id' => $brandId,
-            'message' => $post['message'] ?? $post['text'] ?? null,
+            'message' => $post['message'] ?? $post['text'] ?? $post['description'] ?? null,
             'likes' => $likes,
             'comments' => $comments,
             'shares' => (int) ($post['shares'] ?? 0),
             'reactions' => (int) ($post['reactions'] ?? $likes),
             'reach' => $reach,
-            'impressions' => (int) ($post['impressions'] ?? 0),
+            'impressions' => (int) ($post['impressions'] ?? $post['blueReelsPlayCount'] ?? 0),
             'website_clicks' => $clicks,
             'ad_spend' => round((float) ($post['spend'] ?? 0), 2),
             'engagement_rate' => self::engagementRate(
@@ -131,8 +131,8 @@ class DataProcessor
                 $reach,
                 $post['engagement_rate'] ?? $post['engagement'] ?? null
             ),
-            'post_type' => self::truncateString((string) ($post['type'] ?? $post['post_type'] ?? 'post'), self::POST_TYPE_MAX_LENGTH),
-            'post_url' => self::truncateUrl($post['url'] ?? $post['post_url'] ?? $post['permalinkUrl'] ?? $post['link'] ?? null),
+            'post_type' => self::truncateString((string) ($post['type'] ?? $post['post_type'] ?? (isset($post['reelId']) ? 'reel' : 'post')), self::POST_TYPE_MAX_LENGTH),
+            'post_url' => self::truncateUrl($post['url'] ?? $post['post_url'] ?? $post['permalinkUrl'] ?? $post['link'] ?? $post['reelUrl'] ?? null),
             'published_date' => self::parseDate($post['date'] ?? $post['published_date'] ?? $post['created'] ?? $post['timestamp'] ?? null),
         ];
     }
@@ -591,6 +591,9 @@ class DataProcessor
     private static function parseDate(mixed $value): string
     {
         $timezone = self::metricoolTimezone();
+        if (is_array($value)) {
+            $value = $value['dateTime'] ?? null;
+        }
 
         if ($value === null || $value === '') {
             return (new DateTimeImmutable('now', $timezone))->format('Y-m-d H:i:s');

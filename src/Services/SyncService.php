@@ -234,7 +234,10 @@ class SyncService
                 DataProcessor::unwrapList($this->api->getInstagramPosts($startDate, $endDate)),
                 DataProcessor::unwrapList($this->api->getInstagramReels($startDate, $endDate))
             ),
-            'facebook' => DataProcessor::unwrapList($this->api->getFacebookPosts($startDate, $endDate)),
+            'facebook' => array_merge(
+                DataProcessor::unwrapList($this->api->getFacebookPosts($startDate, $endDate)),
+                DataProcessor::unwrapList($this->api->getFacebookReels($startDate, $endDate))
+            ),
             'tiktok' => DataProcessor::unwrapList($this->api->getTikTokVideos($startDate, $endDate)),
             'x' => DataProcessor::unwrapList($this->api->getXPosts($startDate, $endDate)),
             'linkedin' => DataProcessor::unwrapList($this->api->getLinkedInPosts($startDate, $endDate)),
@@ -303,6 +306,7 @@ class SyncService
                         :media_url, :published_date
                     )
                     ON DUPLICATE KEY UPDATE
+                        published_date = VALUES(published_date),
                         likes = VALUES(likes),
                         comments = VALUES(comments),
                         shares = VALUES(shares),
@@ -325,6 +329,7 @@ class SyncService
                         :website_clicks, :ad_spend, :published_date
                     )
                     ON DUPLICATE KEY UPDATE
+                        published_date = VALUES(published_date),
                         likes = VALUES(likes),
                         comments = VALUES(comments),
                         shares = VALUES(shares),
@@ -371,6 +376,7 @@ class SyncService
                         :impressions, :engagement_rate, :post_url, :published_date
                     )
                     ON DUPLICATE KEY UPDATE
+                        published_date = VALUES(published_date),
                         likes = VALUES(likes),
                         retweets = VALUES(retweets),
                         replies = VALUES(replies),
@@ -390,6 +396,7 @@ class SyncService
                         :impressions, :engagement_rate, :post_url, :published_date
                     )
                     ON DUPLICATE KEY UPDATE
+                        published_date = VALUES(published_date),
                         likes = VALUES(likes),
                         comments = VALUES(comments),
                         shares = VALUES(shares),
@@ -413,35 +420,38 @@ class SyncService
 
         $metrics = MetricoolAPI::ORGANIC_ANALYTICS_METRICS;
 
+        $metricErrors = [];
         $seriesByMetric = [];
         foreach ($metrics as $metric) {
             try {
                 $seriesByMetric[$metric] = $this->api->getAnalytics($network, $startDate, $endDate, $metric);
             } catch (Exception $e) {
                 $this->logger->warn("    métrica {$network}/{$metric}: " . $e->getMessage());
+                $metricErrors[] = "{$network}/{$metric}: " . $e->getMessage();
             }
         }
 
+        if (DataProcessor::mergeTimelineMetrics(['impressions' => $seriesByMetric['impressions'] ?? []], $brandId, $network) === []) {
+            $metricErrors[] = "{$network}/impressions: la API no devolvió una serie diaria de cuenta";
+        }
+        if ($metricErrors !== []) {
+            throw new \RuntimeException(implode(' | ', $metricErrors));
+        }
+
+        // Preserve the existing follower aggregation fallback when its timeline is empty.
+        if (DataProcessor::mergeTimelineMetrics(['followers' => $seriesByMetric['followers']], $brandId, $network) === []) {
+            $aggregation = $this->api->getAnalyticsAggregation($network, $startDate, $endDate, 'followers');
+            $followers = (int) ($aggregation['data'] ?? 0);
+            if ($followers > 0) {
+                $seriesByMetric['followers'] = [[$endDate, $followers]];
+            }
+        }
+
+        $impressionDates = array_fill_keys(array_column(
+            DataProcessor::mergeTimelineMetrics(['impressions' => $seriesByMetric['impressions']], $brandId, $network),
+            'date'
+        ), true);
         $rows = DataProcessor::mergeTimelineMetrics($seriesByMetric, $brandId, $network);
-        if ($rows === []) {
-            try {
-                $aggregation = $this->api->getAnalyticsAggregation(
-                    $network,
-                    $startDate,
-                    $endDate,
-                    'followers'
-                );
-                $followers = (int) ($aggregation['data'] ?? 0);
-                if ($followers > 0) {
-                    $rows[] = $this->emptyAnalyticsRow($brandId, $network, $endDate, [
-                        'followers' => $followers,
-                    ]);
-                }
-            } catch (Exception $e) {
-                $this->logger->warn("    agregación {$network}/followers: " . $e->getMessage());
-            }
-        }
-
         $stmt = $this->pdo->prepare(
             'INSERT INTO daily_analytics (
                 brand_id, network, date, followers, following, posts_count,
@@ -456,21 +466,27 @@ class SyncService
                 followers = CASE
                     WHEN VALUES(followers) > 0 THEN VALUES(followers)
                     ELSE followers
-                END'
+                END,
+                impressions = CASE WHEN :has_impressions THEN VALUES(impressions) ELSE impressions END'
         );
 
         $saved = 0;
+        $saveErrors = [];
         foreach ($rows as $row) {
             try {
-                $stmt->execute($row);
+                $stmt->execute($row + ['has_impressions' => isset($impressionDates[$row['date']]) ? 1 : 0]);
                 $saved++;
             } catch (\Throwable $e) {
                 $rowDate = is_scalar($row['date'] ?? null) ? (string) $row['date'] : 'sin-fecha';
                 $this->logger->warn("    analytics {$network}/{$rowDate}: " . $e->getMessage());
+                $saveErrors[] = "{$network}/{$rowDate}: " . $e->getMessage();
                 continue;
             }
         }
 
+        if ($saveErrors !== []) {
+            throw new \RuntimeException(implode(' | ', $saveErrors));
+        }
         return $saved;
     }
 
@@ -604,7 +620,6 @@ class SyncService
                 comments = VALUES(comments),
                 shares = VALUES(shares),
                 reach = VALUES(reach),
-                impressions = VALUES(impressions),
                 engagement_rate = VALUES(engagement_rate),
                 website_clicks = VALUES(website_clicks),
                 ad_spend = VALUES(ad_spend)'
@@ -645,7 +660,7 @@ class SyncService
                     'comments' => (int) $row['comments'],
                     'shares' => (int) $row['shares'],
                     'reach' => (int) $row['reach'],
-                    'impressions' => (int) $row['impressions'],
+                    'impressions' => 0, // Account impressions are populated only by Analytics timelines.
                     'engagement_rate' => round((float) $row['engagement_rate'], 2),
                     'website_clicks' => (int) $row['website_clicks'],
                     'ad_spend' => round((float) $row['ad_spend'], 2),

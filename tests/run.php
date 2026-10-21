@@ -177,6 +177,31 @@ function createDataServiceFixture(): DataService
 function testStatsDateParams(): void
 {
     assertSameStrict(
+        ['metric' => 'page_media_view', 'subject' => 'account'],
+        MetricoolAPI::resolveAnalyticsMetricSpec('facebook', 'impressions', '2026-10-01'),
+        'Facebook actual debe usar vistas de contenido de cuenta, no pageImpressions ni visitas'
+    );
+    assertSameStrict(
+        ['metric' => 'pageImpressions', 'subject' => 'account'],
+        MetricoolAPI::resolveAnalyticsMetricSpec('facebook', 'impressions', '2024-10-14'),
+        'Facebook histórico debe conservar la métrica anterior al cambio'
+    );
+    assertSameStrict(
+        ['metric' => 'page_media_view', 'subject' => 'account'],
+        MetricoolAPI::resolveAnalyticsMetricSpec('facebook', 'impressions', '2024-10-15'),
+        'El día del cambio debe usar page_media_view'
+    );
+    assertSameStrict(
+        ['metric' => 'views', 'subject' => 'account'],
+        MetricoolAPI::resolveAnalyticsMetricSpec('instagram', 'impressions', '2026-10-01'),
+        'La corrección Facebook debe conservar las vistas de Instagram'
+    );
+    assertSameStrict(
+        ['metric' => 'impressions', 'subject' => 'account'],
+        MetricoolAPI::resolveAnalyticsMetricSpec('facebookads', 'impressions', '2026-10-01'),
+        'La corrección Facebook no debe cambiar las métricas publicitarias'
+    );
+    assertSameStrict(
         ['start' => '20260801', 'end' => '20260805'],
         MetricoolAPI::statsDateParams('2026-08-01', '20260805'),
         'statsDateParams debe normalizar YYYY-MM-DD a YYYYMMDD'

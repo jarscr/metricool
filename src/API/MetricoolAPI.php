@@ -74,7 +74,7 @@ class MetricoolAPI
     public const ADS_ANALYTICS_NETWORKS = ['facebookads', 'googleads', 'tiktokads'];
 
     /** @var list<string> */
-    public const ORGANIC_ANALYTICS_METRICS = ['followers'];
+    public const ORGANIC_ANALYTICS_METRICS = ['followers', 'impressions'];
 
     /** @var list<string> */
     public const ADS_ANALYTICS_METRICS = ['impressions', 'clicks', 'spend', 'reach'];
@@ -125,6 +125,16 @@ class MetricoolAPI
         return $this->getStatsPosts('facebook', $startDate, $endDate);
     }
 
+    public function getFacebookReels(string $startDate, string $endDate): array
+    {
+        $this->requireBlogId();
+        return $this->makeRequest('/v2/analytics/reels/facebook', [
+            'from' => $startDate . 'T00:00:00',
+            'to' => $endDate . 'T23:59:59',
+            'timezone' => $this->timezone,
+        ]);
+    }
+
     public function getTikTokVideos(string $startDate, string $endDate): array
     {
         $this->requireBlogId();
@@ -153,7 +163,7 @@ class MetricoolAPI
     {
         $this->requireBlogId();
         $apiNetwork = self::resolveStatsNetwork($network);
-        $spec = self::resolveAnalyticsMetricSpec($network, $metric ?? 'followers');
+        $spec = self::resolveAnalyticsMetricSpec($network, $metric ?? 'followers', $startDate);
 
         return $this->makeRequest('/v2/analytics/timelines', [
             'network' => $apiNetwork,
@@ -172,7 +182,7 @@ class MetricoolAPI
         string $metric
     ): array {
         $this->requireBlogId();
-        $spec = self::resolveAnalyticsMetricSpec($network, $metric);
+        $spec = self::resolveAnalyticsMetricSpec($network, $metric, $startDate);
 
         return $this->makeRequest('/v2/analytics/aggregation', [
             'network' => self::resolveStatsNetwork($network),
@@ -204,8 +214,21 @@ class MetricoolAPI
      *
      * @return array{metric: string, subject: string}
      */
-    public static function resolveAnalyticsMetricSpec(string $network, string $metric): array
+    public static function resolveAnalyticsMetricSpec(string $network, string $metric, ?string $startDate = null): array
     {
+        if ($metric === 'impressions') {
+            return ['metric' => match ($network) {
+                // Match Metricool's Facebook account chart: older ranges use
+                // pageImpressions; current ranges use content views, not visits.
+                'facebook' => $startDate !== null && $startDate < '2024-10-15'
+                    ? 'pageImpressions'
+                    : 'page_media_view',
+                'instagram' => 'views',
+                'tiktok' => 'video_views',
+                default => 'impressions',
+            }, 'subject' => 'account'];
+        }
+
         if ($metric !== 'followers') {
             return ['metric' => $metric, 'subject' => 'account'];
         }
@@ -437,6 +460,27 @@ class MetricoolAPI
                     return [];
                 }
 
+                if ($endpoint === '/v2/analytics/reels/facebook' && !in_array(substr(ltrim((string) $response), 0, 1), ['{', '['], true)) {
+                    $stream = fopen('php://temp', 'r+');
+                    fwrite($stream, (string) $response);
+                    rewind($stream);
+                    $header = fgetcsv($stream, 0, ',', '"', '');
+                    if (!$header || !in_array('reelId', $header, true)) {
+                        fclose($stream);
+                        throw new Exception('CSV de reels Facebook sin columna reelId reconocible');
+                    }
+                    $rows = [];
+                    while (($values = fgetcsv($stream, 0, ',', '"', '')) !== false) {
+                        if ($values === [null]) { continue; }
+                        if (count($values) !== count($header)) {
+                            fclose($stream);
+                            throw new Exception('Fila CSV de reels Facebook inválida');
+                        }
+                        $rows[] = array_combine($header, $values);
+                    }
+                    fclose($stream);
+                    return $rows;
+                }
                 $decoded = json_decode((string) $response, true);
                 if (json_last_error() !== JSON_ERROR_NONE) {
                     throw new Exception('Respuesta JSON inválida de Metricool');

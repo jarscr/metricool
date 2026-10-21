@@ -10,6 +10,7 @@ $currentUser = AuthMiddleware::currentUser();
 ?>
 <!DOCTYPE html>
 <html lang="es">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -22,8 +23,9 @@ $currentUser = AuthMiddleware::currentUser();
     <script src="assets/js/api-client.js?v=<?= (int) filemtime(__DIR__ . '/assets/js/api-client.js') ?>" defer></script>
     <script src="assets/js/dashboard.js?v=<?= (int) filemtime(__DIR__ . '/assets/js/dashboard.js') ?>" defer></script>
     <link rel="shortcut icon" type="image/x-icon" href="/assets/images/icon.png">
-    <link rel="apple-touch-icon" href="/assets/images/icon.png"/>
+    <link rel="apple-touch-icon" href="/assets/images/icon.png" />
 </head>
+
 <body class="dashboard-page--brand-gradient">
     <div class="app">
         <header class="header">
@@ -80,6 +82,7 @@ $currentUser = AuthMiddleware::currentUser();
                     </select>
                 </label>
                 <button type="button" class="btn btn--primary" id="applyFilters">Actualizar</button>
+                <button type="button" class="btn btn--report" id="downloadReport" disabled>Descargar PDF</button>
             </div>
         </section>
 
@@ -190,4 +193,5 @@ $currentUser = AuthMiddleware::currentUser();
         </footer>
     </div>
 </body>
+
 </html>

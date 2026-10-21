@@ -1,0 +1,5 @@
+simulation: metricool-account-and-posts
+routing: path
+mocks:
+  - routeKey: metricool
+    path: ../mocks/metricool/default.js
