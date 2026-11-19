@@ -48,17 +48,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = 'El token CSRF no es válido.';
     } else {
         try {
-            $saved = $users->saveCompanyUser([
-                'id' => $_POST['user_id'] ?? null,
-                'email' => $_POST['email'] ?? '',
-                'display_name' => $_POST['display_name'] ?? '',
-                'brand_id' => $_POST['brand_id'] ?? 0,
-                'password' => $_POST['password'] ?? '',
-                'active' => isset($_POST['active']) ? '1' : '0',
-            ]);
-
-            $success = 'Cuenta guardada correctamente.';
-            $editUser = $saved;
+            if (($_POST['action'] ?? '') === 'delete') {
+                $users->deleteAccessUser((int) ($_POST['user_id'] ?? 0), (int) (AuthMiddleware::currentUser()['id'] ?? 0));
+                $success = 'Usuario eliminado correctamente.';
+            } else {
+                $saved = $users->saveAccessUser([
+                    'id' => $_POST['user_id'] ?? null,
+                    'email' => $_POST['email'] ?? '',
+                    'display_name' => $_POST['display_name'] ?? '',
+                    'brand_id' => $_POST['brand_id'] ?? 0,
+                    'role' => $_POST['role'] ?? 'company',
+                    'password' => $_POST['password'] ?? '',
+                    'active' => isset($_POST['active']) ? '1' : '0',
+                ]);
+                $success = 'Usuario guardado correctamente.';
+                $editUser = $saved;
+            }
         } catch (\Throwable $e) {
             $error = $e->getMessage();
         }
@@ -66,12 +71,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 if ($editUser === null && isset($_GET['edit']) && ctype_digit((string) $_GET['edit'])) {
-    $editUser = $users->getCompanyUserById((int) $_GET['edit']);
+    $editUser = $users->getAccessUserById((int) $_GET['edit']);
 }
 
 $csrfToken = AuthMiddleware::csrfToken();
 $brandOptions = $users->getBrands();
-$companyUsers = $users->getCompanyUsers();
+$accessUsers = $users->getAccessUsers();
 $currentUser = AuthMiddleware::currentUser();
 ?>
 <!DOCTYPE html>
@@ -124,10 +129,10 @@ $currentUser = AuthMiddleware::currentUser();
         <section class="panel admin-editor">
             <div class="panel__header">
                 <div>
-                    <p class="eyebrow"><?= $editUser ? 'Edición' : 'Nueva empresa' ?></p>
-                    <h2><?= $editUser ? 'Editar cuenta de empresa' : 'Crear cuenta de empresa' ?></h2>
+                    <p class="eyebrow"><?= $editUser ? 'Edición' : 'Nuevo acceso' ?></p>
+                    <h2><?= $editUser ? 'Editar usuario' : 'Crear usuario' ?></h2>
                 </div>
-                <span class="panel__descriptor">Cada cuenta tendrá acceso únicamente a la marca asignada</span>
+                <span class="panel__descriptor">Administra cuentas de empresa y accesos internos</span>
             </div>
             <div class="panel__body admin-editor__body">
                 <form method="post" class="admin-form">
@@ -142,6 +147,14 @@ $currentUser = AuthMiddleware::currentUser();
                         <input type="email" name="email" required autocomplete="username" placeholder="empresa@dominio.com" value="<?= htmlspecialchars((string) ($editUser['email'] ?? '')) ?>">
                     </label>
                     <label class="field admin-field">
+                        <span>Tipo de usuario</span>
+                        <select name="role" id="userRole" required>
+                            <option value="company" <?= (($editUser['role'] ?? 'company') === 'company') ? 'selected' : '' ?>>Empresa · una marca</option>
+                            <option value="viewer" <?= (($editUser['role'] ?? '') === 'viewer') ? 'selected' : '' ?>>Visor · todas las marcas</option>
+                            <option value="admin" <?= (($editUser['role'] ?? '') === 'admin') ? 'selected' : '' ?>>Administrador · gestiona usuarios</option>
+                        </select>
+                    </label>
+                    <label class="field admin-field" id="brandField">
                         <span>Marca</span>
                         <select name="brand_id" required>
                             <option value="">Selecciona una marca</option>
@@ -153,7 +166,7 @@ $currentUser = AuthMiddleware::currentUser();
                         </select>
                     </label>
                     <label class="field admin-field">
-                        <span><?= $editUser ? 'Nueva contraseña (opcional)' : 'Contraseña' ?></span>
+                        <span><?= $editUser ? 'Cambiar contraseña (opcional)' : 'Contraseña' ?></span>
                         <input type="password" name="password" autocomplete="new-password" placeholder="Mínimo 8 caracteres" <?= $editUser ? '' : 'required' ?>>
                     </label>
                     <label class="account-toggle">
@@ -161,7 +174,7 @@ $currentUser = AuthMiddleware::currentUser();
                         <span class="account-toggle__track" aria-hidden="true"><span></span></span>
                         <span class="account-toggle__copy">
                             <strong>Cuenta activa</strong>
-                            <small>Permite que la empresa ingrese y consulte su marca.</small>
+                            <small>Permite que el usuario ingrese al panel según su rol.</small>
                         </span>
                     </label>
                     <div class="admin-form__actions">
@@ -180,13 +193,13 @@ $currentUser = AuthMiddleware::currentUser();
                     <p class="eyebrow">Directorio</p>
                     <h2>Cuentas registradas</h2>
                 </div>
-                <span class="admin-count"><?= count($companyUsers) ?> <?= count($companyUsers) === 1 ? 'cuenta' : 'cuentas' ?></span>
+                <span class="admin-count"><?= count($accessUsers) ?> <?= count($accessUsers) === 1 ? 'usuario' : 'usuarios' ?></span>
             </div>
             <div class="panel__body admin-accounts__body">
-                <?php if ($companyUsers === []): ?>
+                <?php if ($accessUsers === []): ?>
                     <div class="admin-empty-state">
                         <span aria-hidden="true">+</span>
-                        <strong>Aún no hay cuentas de empresa</strong>
+                        <strong>Aún no hay usuarios</strong>
                         <p>Completa el formulario superior para crear el primer acceso.</p>
                     </div>
                 <?php else: ?>
@@ -194,21 +207,33 @@ $currentUser = AuthMiddleware::currentUser();
                         <table class="admin-table">
                             <thead>
                                 <tr>
-                                    <th>Marca</th>
+                                    <th>Rol</th>
                                     <th>Nombre</th>
                                     <th>Correo</th>
+                                    <th>Marca</th>
                                     <th>Estado</th>
                                     <th><span class="sr-only">Acción</span></th>
                                 </tr>
                             </thead>
                             <tbody>
-                                <?php foreach ($companyUsers as $companyUser): ?>
+                                <?php foreach ($accessUsers as $accountUser): ?>
                                     <tr>
-                                        <td data-label="Marca"><strong><?= htmlspecialchars($companyUser['brand_name']) ?></strong></td>
-                                        <td data-label="Nombre"><?= htmlspecialchars($companyUser['display_name']) ?></td>
-                                        <td data-label="Correo"><?= htmlspecialchars($companyUser['email']) ?></td>
-                                        <td data-label="Estado"><span class="account-status <?= $companyUser['active'] ? 'account-status--active' : 'account-status--inactive' ?>"><?= $companyUser['active'] ? 'Activa' : 'Inactiva' ?></span></td>
-                                        <td data-label="Acción"><a class="btn btn--table" href="admin.php?edit=<?= (int) $companyUser['id'] ?>">Editar</a></td>
+                                        <td data-label="Rol"><strong><?= htmlspecialchars(match ($accountUser['role']) { 'admin' => 'Administrador', 'viewer' => 'Visor global', default => 'Empresa' }) ?></strong></td>
+                                        <td data-label="Nombre"><?= htmlspecialchars($accountUser['display_name']) ?></td>
+                                        <td data-label="Correo"><?= htmlspecialchars($accountUser['email']) ?></td>
+                                        <td data-label="Marca"><?= htmlspecialchars($accountUser['brand_name'] ?? 'Todas') ?></td>
+                                        <td data-label="Estado"><span class="account-status <?= $accountUser['active'] ? 'account-status--active' : 'account-status--inactive' ?>"><?= $accountUser['active'] ? 'Activo' : 'Inactivo' ?></span></td>
+                                        <td data-label="Acción" class="admin-row-actions">
+                                            <a class="btn btn--table" href="admin.php?edit=<?= (int) $accountUser['id'] ?>">Editar</a>
+                                            <?php if ((int) $accountUser['id'] !== (int) ($currentUser['id'] ?? 0)): ?>
+                                                <form method="post" onsubmit="return confirm('¿Eliminar este usuario? No podrá volver a ingresar.');">
+                                                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken) ?>">
+                                                    <input type="hidden" name="action" value="delete">
+                                                    <input type="hidden" name="user_id" value="<?= (int) $accountUser['id'] ?>">
+                                                    <button type="submit" class="btn btn--table btn--danger">Eliminar</button>
+                                                </form>
+                                            <?php endif; ?>
+                                        </td>
                                     </tr>
                                 <?php endforeach; ?>
                             </tbody>
@@ -223,5 +248,17 @@ $currentUser = AuthMiddleware::currentUser();
             <span>Desarrollado por <strong>JARS Costa Rica</strong> · <?= date('Y') ?></span>
         </footer>
     </div>
+<script>
+    const roleSelect = document.getElementById('userRole');
+    const brandField = document.getElementById('brandField');
+    const brandSelect = brandField.querySelector('select');
+    function toggleBrandField() {
+        const isCompany = roleSelect.value === 'company';
+        brandField.hidden = !isCompany;
+        brandSelect.required = isCompany;
+    }
+    roleSelect.addEventListener('change', toggleBrandField);
+    toggleBrandField();
+</script>
 </body>
 </html>

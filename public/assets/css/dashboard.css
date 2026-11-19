@@ -1278,6 +1278,27 @@ select {
   text-align: right;
 }
 
+.admin-row-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-row-actions form {
+  margin: 0;
+}
+
+.btn--danger {
+  border-color: rgba(242, 103, 103, 0.25);
+  background: rgba(242, 103, 103, 0.1);
+  color: #ff9696;
+}
+
+.btn--danger:hover {
+  background: rgba(242, 103, 103, 0.18);
+}
+
 .account-status {
   display: inline-flex;
   min-height: 24px;
@@ -1963,6 +1984,11 @@ select {
 
   .admin-table td:last-child {
     text-align: left;
+  }
+
+  .admin-row-actions {
+    justify-content: flex-start;
+    flex-wrap: wrap;
   }
 
   .admin-table td:last-child .btn {

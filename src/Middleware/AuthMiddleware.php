@@ -124,6 +124,11 @@ class AuthMiddleware
         return (self::currentUser()['role'] ?? null) === 'admin';
     }
 
+    public static function canViewAllBrands(): bool
+    {
+        return in_array(self::currentUser()['role'] ?? null, ['admin', 'viewer'], true);
+    }
+
     public static function authorizeBrandId(?int $requested): int
     {
         $user = self::currentUser();
@@ -131,7 +136,7 @@ class AuthMiddleware
             throw new AuthorizationException('Autenticación requerida', 401, 'UNAUTHORIZED');
         }
 
-        if ((string) $user['role'] === 'admin') {
+        if (in_array((string) $user['role'], ['admin', 'viewer'], true)) {
             if ($requested === null || $requested <= 0) {
                 throw new \InvalidArgumentException('Parámetro requerido: brand_id');
             }

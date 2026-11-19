@@ -43,7 +43,7 @@ try {
 function handleBrands(DataService $data): void
 {
     $brands = $data->getBrands();
-    if (!AuthMiddleware::isAdmin()) {
+    if (!AuthMiddleware::canViewAllBrands()) {
         $brandId = AuthMiddleware::authorizeBrandId(null);
         $brands = array_values(array_filter(
             $brands,
@@ -57,7 +57,7 @@ function handleBrands(DataService $data): void
 function handleDashboardSummary(DataService $data): void
 {
     $requested = getOptionalInt('brand_id');
-    $brandId = AuthMiddleware::isAdmin() && $requested === null
+    $brandId = AuthMiddleware::canViewAllBrands() && $requested === null
         ? null
         : AuthMiddleware::authorizeBrandId($requested);
     JsonResponse::success($data->getDashboardSummary($brandId));

@@ -26,6 +26,7 @@ CREATE TABLE dashboard_users (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY unique_dashboard_user_email (email),
     INDEX idx_dashboard_user_brand (brand_id),
+    INDEX idx_dashboard_user_role_active (role, is_active),
     FOREIGN KEY (brand_id) REFERENCES brands(id) ON DELETE CASCADE
 );
 

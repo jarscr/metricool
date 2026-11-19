@@ -6,6 +6,8 @@ use PDO;
 
 class UserService
 {
+    private const MANAGED_ROLES = ['admin', 'viewer', 'company'];
+
     public function __construct(private readonly PDO $pdo)
     {
     }
@@ -156,6 +158,139 @@ class UserService
                 'brand_name' => (string) $row['brand_name'],
             ];
         }, $rows);
+    }
+
+    /** @return list<array{id: int, email: string, role: string, brand_id: ?int, display_name: string, active: bool, brand_name: ?string}> */
+    public function getAccessUsers(): array
+    {
+        $stmt = $this->pdo->query(
+            'SELECT u.id, u.email, u.role, u.brand_id, u.display_name, u.is_active, b.name AS brand_name
+             FROM dashboard_users u
+             LEFT JOIN brands b ON b.id = u.brand_id
+             ORDER BY FIELD(u.role, \'admin\', \'viewer\', \'company\'), u.email ASC'
+        );
+
+        return array_map(fn (array $row): array => [
+            'id' => (int) $row['id'],
+            'email' => (string) $row['email'],
+            'role' => (string) $row['role'],
+            'brand_id' => $row['brand_id'] !== null ? (int) $row['brand_id'] : null,
+            'display_name' => (string) $row['display_name'],
+            'active' => $this->isUserActive($row),
+            'brand_name' => $row['brand_name'] !== null ? (string) $row['brand_name'] : null,
+        ], $stmt->fetchAll());
+    }
+
+    /** @param array{id?: mixed, email?: mixed, display_name?: mixed, brand_id?: mixed, role?: mixed, password?: mixed, active?: mixed} $data
+     *  @return array{id: int, email: string, role: string, brand_id: ?int, display_name: string, active: bool}
+     */
+    public function saveAccessUser(array $data): array
+    {
+        $id = isset($data['id']) && $data['id'] !== '' ? (int) $data['id'] : null;
+        $email = $this->normalizeEmail((string) ($data['email'] ?? ''));
+        $displayName = trim((string) ($data['display_name'] ?? ''));
+        $role = trim((string) ($data['role'] ?? 'company'));
+        $password = (string) ($data['password'] ?? '');
+        $active = $this->normalizeBool($data['active'] ?? true);
+        $brandId = $role === 'company' ? (int) ($data['brand_id'] ?? 0) : null;
+
+        if (!in_array($role, self::MANAGED_ROLES, true)) {
+            throw new \InvalidArgumentException('Tipo de usuario no válido');
+        }
+        if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            throw new \InvalidArgumentException('Correo electrónico no válido');
+        }
+        if ($displayName === '') {
+            throw new \InvalidArgumentException('Nombre requerido');
+        }
+        if ($role === 'company' && ($brandId === null || $brandId <= 0 || !$this->brandExists($brandId))) {
+            throw new \InvalidArgumentException('Marca no válida');
+        }
+
+        $existingByEmail = $this->findRecordByEmail($email);
+        if ($existingByEmail !== null && (int) $existingByEmail['id'] !== $id) {
+            throw new \InvalidArgumentException('Ya existe un usuario con ese correo');
+        }
+        if ($id === null && $password === '') {
+            throw new \InvalidArgumentException('La contraseña es requerida para nuevas cuentas');
+        }
+        if ($password !== '') {
+            $this->validatePassword($password);
+        }
+
+        $existing = $id === null ? null : $this->findRecordById($id);
+        if ($id !== null && $existing === null) {
+            throw new \InvalidArgumentException('Usuario no encontrado');
+        }
+        if ($existing !== null && (string) $existing['role'] === 'admin' && $this->isUserActive($existing)
+            && ((string) $role !== 'admin' || !$active)
+            && $this->countOtherActiveAdmins($id) === 0) {
+            throw new \InvalidArgumentException('Debe permanecer al menos un administrador activo');
+        }
+
+        if ($id === null) {
+            $stmt = $this->pdo->prepare(
+                'INSERT INTO dashboard_users (brand_id, email, password_hash, role, display_name, is_active, created_at, updated_at)
+                 VALUES (:brand_id, :email, :password_hash, :role, :display_name, :is_active, :created_at, :updated_at)'
+            );
+            $stmt->execute([
+                'brand_id' => $brandId,
+                'email' => $email,
+                'password_hash' => password_hash($password, PASSWORD_DEFAULT),
+                'role' => $role,
+                'display_name' => $displayName,
+                'is_active' => $active ? 1 : 0,
+                'created_at' => $this->now(),
+                'updated_at' => $this->now(),
+            ]);
+            $id = (int) $this->pdo->lastInsertId();
+        } else {
+            $fields = [
+                'brand_id = :brand_id', 'email = :email', 'role = :role',
+                'display_name = :display_name', 'is_active = :is_active', 'updated_at = :updated_at',
+            ];
+            $params = [
+                'id' => $id, 'brand_id' => $brandId, 'email' => $email, 'role' => $role,
+                'display_name' => $displayName, 'is_active' => $active ? 1 : 0, 'updated_at' => $this->now(),
+            ];
+            if ($password !== '') {
+                $fields[] = 'password_hash = :password_hash';
+                $params['password_hash'] = password_hash($password, PASSWORD_DEFAULT);
+            }
+            $this->pdo->prepare('UPDATE dashboard_users SET ' . implode(', ', $fields) . ' WHERE id = :id')->execute($params);
+        }
+
+        return $this->getAccessUserById($id) ?? throw new \RuntimeException('No se pudo cargar el usuario');
+    }
+
+    /** @return array{id: int, email: string, role: string, brand_id: ?int, display_name: string, active: bool}|null */
+    public function getAccessUserById(int $id): ?array
+    {
+        $row = $this->findRecordById($id);
+        return $row === null ? null : $this->mapUser($row);
+    }
+
+    public function deleteAccessUser(int $id, int $currentUserId): void
+    {
+        if ($id === $currentUserId) {
+            throw new \InvalidArgumentException('No puedes eliminar tu propio usuario');
+        }
+        $user = $this->findRecordById($id);
+        if ($user === null) {
+            throw new \InvalidArgumentException('Usuario no encontrado');
+        }
+        if ((string) $user['role'] === 'admin' && $this->isUserActive($user) && $this->countOtherActiveAdmins($id) === 0) {
+            throw new \InvalidArgumentException('No se puede eliminar el último administrador activo');
+        }
+        $stmt = $this->pdo->prepare('DELETE FROM dashboard_users WHERE id = :id');
+        $stmt->execute(['id' => $id]);
+    }
+
+    private function countOtherActiveAdmins(int $excludedId): int
+    {
+        $stmt = $this->pdo->prepare("SELECT COUNT(*) FROM dashboard_users WHERE role = 'admin' AND is_active = 1 AND id <> :id");
+        $stmt->execute(['id' => $excludedId]);
+        return (int) $stmt->fetchColumn();
     }
 
     /**

@@ -12,12 +12,20 @@ Dashboard PHP/MySQL que sincroniza y muestra únicamente Facebook, Instagram y T
 
 1. Copiar `.env.example` a `.env` y configurar las credenciales de Metricool, MySQL y el administrador inicial.
 2. Para una instalación nueva, importar `database/schema.sql`.
-3. Para una instalación existente, aplicar en orden `database/migrations/001_dashboard_access.sql` y `database/migrations/002_sync_schema_alignment.sql`.
+3. Para una instalación existente, aplicar en orden `database/migrations/001_dashboard_access.sql`, `database/migrations/002_sync_schema_alignment.sql` y `database/migrations/003_user_access_index.sql`.
 4. Publicar `public/` como raíz web. No se debe exponer `.env`, `database/`, `src/` ni los scripts de consola.
 
-El primer inicio de sesión crea el administrador en `dashboard_users` usando `DASHBOARD_ADMIN_EMAIL` y `DASHBOARD_ADMIN_PASSWORD`. La contraseña se guarda con `password_hash`; no se almacena en texto plano. Desde `public/admin.php`, el administrador crea cuentas de empresa, les asigna una marca de Metricool y define o cambia su contraseña.
+### Instalación en DreamHost
 
-Cada usuario de empresa queda ligado a un único `brand_id`. El servidor valida ese alcance en todas las rutas de la API, por lo que cambiar manualmente el selector o el parámetro `brand_id` no permite consultar otra empresa.
+Subir el proyecto completo conservando su estructura y configurar la carpeta `public/` como directorio web del dominio. Por ejemplo, si el proyecto está en `/home/usuario/metricool`, el directorio web debe ser `/home/usuario/metricool/public` (el valor que solicita el panel puede ser relativo al usuario). No mover solamente el contenido de `public/`: la aplicación necesita acceder a los archivos de configuración y código que están en su carpeta padre.
+
+En el panel de DreamHost, ir a **Manage Websites → Manage → Settings → Directories → Modify**, indicar la carpeta `public` en **Web directory** y guardar. La carpeta debe existir antes de cambiar la configuración. Ver la [guía de DreamHost](https://help.dreamhost.com/hc/en-us/articles/360041534491-Changing-the-web-directory-assigned-to-a-domain).
+
+No se necesita un `.htaccess` para dirigir las solicitudes a `public/` cuando esta carpeta es el directorio web. Esta configuración mantiene `.env`, los registros, la base de datos y el código de la aplicación fuera del directorio servido públicamente. Crear el `.env` en la raíz del proyecto, no dentro de `public/`. La aplicación está preparada para funcionar en la raíz de un dominio o subdominio; algunas imágenes utilizan rutas que empiezan por `/`.
+
+El primer inicio de sesión crea el administrador en `dashboard_users` usando `DASHBOARD_ADMIN_EMAIL` y `DASHBOARD_ADMIN_PASSWORD`. La contraseña se guarda con `password_hash`; no se almacena en texto plano. Desde `public/admin.php`, un administrador puede crear administradores adicionales, usuarios de empresa ligados a una marca y usuarios visor con acceso de solo lectura a todas las marcas. También puede cambiar contraseñas, activar o desactivar accesos y eliminar usuarios. El sistema impide eliminar, desactivar o degradar al último administrador activo.
+
+Cada usuario de empresa queda ligado a un único `brand_id`. El servidor valida ese alcance en todas las rutas de la API, por lo que cambiar manualmente el selector o el parámetro `brand_id` no permite consultar otra empresa. Los usuarios visor pueden consultar todas las marcas y no tienen acceso a la administración de usuarios.
 
 ## Sincronización
 
