@@ -13,9 +13,10 @@ try {
     AuthMiddleware::requireAdmin();
 } catch (AuthorizationException $e) {
     http_response_code($e->statusCode());
-    ?>
+?>
     <!DOCTYPE html>
     <html lang="es">
+
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -25,6 +26,7 @@ try {
         <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600;700&display=swap" rel="stylesheet">
         <link rel="stylesheet" href="assets/css/dashboard.css?v=<?= (int) filemtime(__DIR__ . '/assets/css/dashboard.css') ?>">
     </head>
+
     <body class="login-page">
         <div class="login-card">
             <h1>Acceso denegado</h1>
@@ -32,8 +34,9 @@ try {
             <p><a href="index.php">Ir al dashboard</a></p>
         </div>
     </body>
+
     </html>
-    <?php
+<?php
     exit;
 }
 
@@ -81,6 +84,7 @@ $currentUser = AuthMiddleware::currentUser();
 ?>
 <!DOCTYPE html>
 <html lang="es">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -90,6 +94,7 @@ $currentUser = AuthMiddleware::currentUser();
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="assets/css/dashboard.css?v=<?= (int) filemtime(__DIR__ . '/assets/css/dashboard.css') ?>">
 </head>
+
 <body class="admin-page">
     <div class="app app--admin">
         <header class="header admin-header">
@@ -218,7 +223,11 @@ $currentUser = AuthMiddleware::currentUser();
                             <tbody>
                                 <?php foreach ($accessUsers as $accountUser): ?>
                                     <tr>
-                                        <td data-label="Rol"><strong><?= htmlspecialchars(match ($accountUser['role']) { 'admin' => 'Administrador', 'viewer' => 'Visor global', default => 'Empresa' }) ?></strong></td>
+                                        <td data-label="Rol"><strong><?= htmlspecialchars(match ($accountUser['role']) {
+                                                                            'admin' => 'Administrador',
+                                                                            'viewer' => 'Visor global',
+                                                                            default => 'Empresa'
+                                                                        }) ?></strong></td>
                                         <td data-label="Nombre"><?= htmlspecialchars($accountUser['display_name']) ?></td>
                                         <td data-label="Correo"><?= htmlspecialchars($accountUser['email']) ?></td>
                                         <td data-label="Marca"><?= htmlspecialchars($accountUser['brand_name'] ?? 'Todas') ?></td>
@@ -231,6 +240,7 @@ $currentUser = AuthMiddleware::currentUser();
                                                     <input type="hidden" name="action" value="delete">
                                                     <input type="hidden" name="user_id" value="<?= (int) $accountUser['id'] ?>">
                                                     <button type="submit" class="btn btn--table btn--danger">Eliminar</button>
+
                                                 </form>
                                             <?php endif; ?>
                                         </td>
@@ -248,17 +258,19 @@ $currentUser = AuthMiddleware::currentUser();
             <span>Desarrollado por <strong>JARS Costa Rica</strong> · <?= date('Y') ?></span>
         </footer>
     </div>
-<script>
-    const roleSelect = document.getElementById('userRole');
-    const brandField = document.getElementById('brandField');
-    const brandSelect = brandField.querySelector('select');
-    function toggleBrandField() {
-        const isCompany = roleSelect.value === 'company';
-        brandField.hidden = !isCompany;
-        brandSelect.required = isCompany;
-    }
-    roleSelect.addEventListener('change', toggleBrandField);
-    toggleBrandField();
-</script>
+    <script>
+        const roleSelect = document.getElementById('userRole');
+        const brandField = document.getElementById('brandField');
+        const brandSelect = brandField.querySelector('select');
+
+        function toggleBrandField() {
+            const isCompany = roleSelect.value === 'company';
+            brandField.hidden = !isCompany;
+            brandSelect.required = isCompany;
+        }
+        roleSelect.addEventListener('change', toggleBrandField);
+        toggleBrandField();
+    </script>
 </body>
+
 </html>

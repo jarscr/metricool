@@ -1,5 +1,6 @@
 <?php
 
+
 namespace Metricool\Middleware;
 
 use Metricool\Config\Database;

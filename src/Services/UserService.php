@@ -8,9 +8,7 @@ class UserService
 {
     private const MANAGED_ROLES = ['admin', 'viewer', 'company'];
 
-    public function __construct(private readonly PDO $pdo)
-    {
-    }
+    public function __construct(private readonly PDO $pdo) {}
 
     /**
      * @return array{id: int, email: string, role: string, brand_id: ?int, display_name: string, active: bool}|null
@@ -170,7 +168,7 @@ class UserService
              ORDER BY FIELD(u.role, \'admin\', \'viewer\', \'company\'), u.email ASC'
         );
 
-        return array_map(fn (array $row): array => [
+        return array_map(fn(array $row): array => [
             'id' => (int) $row['id'],
             'email' => (string) $row['email'],
             'role' => (string) $row['role'],
@@ -222,9 +220,11 @@ class UserService
         if ($id !== null && $existing === null) {
             throw new \InvalidArgumentException('Usuario no encontrado');
         }
-        if ($existing !== null && (string) $existing['role'] === 'admin' && $this->isUserActive($existing)
+        if (
+            $existing !== null && (string) $existing['role'] === 'admin' && $this->isUserActive($existing)
             && ((string) $role !== 'admin' || !$active)
-            && $this->countOtherActiveAdmins($id) === 0) {
+            && $this->countOtherActiveAdmins($id) === 0
+        ) {
             throw new \InvalidArgumentException('Debe permanecer al menos un administrador activo');
         }
 
@@ -246,12 +246,21 @@ class UserService
             $id = (int) $this->pdo->lastInsertId();
         } else {
             $fields = [
-                'brand_id = :brand_id', 'email = :email', 'role = :role',
-                'display_name = :display_name', 'is_active = :is_active', 'updated_at = :updated_at',
+                'brand_id = :brand_id',
+                'email = :email',
+                'role = :role',
+                'display_name = :display_name',
+                'is_active = :is_active',
+                'updated_at = :updated_at',
             ];
             $params = [
-                'id' => $id, 'brand_id' => $brandId, 'email' => $email, 'role' => $role,
-                'display_name' => $displayName, 'is_active' => $active ? 1 : 0, 'updated_at' => $this->now(),
+                'id' => $id,
+                'brand_id' => $brandId,
+                'email' => $email,
+                'role' => $role,
+                'display_name' => $displayName,
+                'is_active' => $active ? 1 : 0,
+                'updated_at' => $this->now(),
             ];
             if ($password !== '') {
                 $fields[] = 'password_hash = :password_hash';
@@ -300,7 +309,7 @@ class UserService
     {
         $stmt = $this->pdo->query('SELECT id, name FROM brands ORDER BY name ASC');
 
-        return array_map(static fn (array $row): array => [
+        return array_map(static fn(array $row): array => [
             'id' => (int) $row['id'],
             'name' => (string) $row['name'],
         ], $stmt->fetchAll());
