@@ -217,11 +217,23 @@ class SyncService
      */
     private function saveBrand(array $brand): void
     {
-        $stmt = $this->pdo->prepare(
-            'INSERT INTO brands (id, name) VALUES (:id, :name)
-             ON DUPLICATE KEY UPDATE name = VALUES(name)'
-        );
-        $stmt->execute([
+        // Keep this safe even if the deployed brands table is missing its
+        // expected unique index on id. An upsert alone would insert another
+        // row on every sync when that index is absent.
+        $exists = $this->pdo->prepare('SELECT 1 FROM brands WHERE id = :id LIMIT 1');
+        $exists->execute(['id' => $brand['id']]);
+
+        if ($exists->fetchColumn() !== false) {
+            $update = $this->pdo->prepare('UPDATE brands SET name = :name WHERE id = :id');
+            $update->execute([
+                'id' => $brand['id'],
+                'name' => $brand['name'],
+            ]);
+            return;
+        }
+
+        $insert = $this->pdo->prepare('INSERT INTO brands (id, name) VALUES (:id, :name)');
+        $insert->execute([
             'id' => $brand['id'],
             'name' => $brand['name'],
         ]);

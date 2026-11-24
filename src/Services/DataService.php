@@ -28,7 +28,9 @@ class DataService
      */
     public function getBrands(): array
     {
-        $stmt = $this->pdo->query('SELECT id, name FROM brands ORDER BY name ASC');
+        $stmt = $this->pdo->query(
+            'SELECT id, MAX(name) AS name FROM brands GROUP BY id ORDER BY name ASC'
+        );
         return $stmt->fetchAll();
     }
 
